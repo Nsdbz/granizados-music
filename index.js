@@ -337,14 +337,74 @@ app.get('/playlists/:id/songs', async (req, res) => {
  
 app.post('/request', async (req, res) => {
   const { videoId, title, thumbnail, clientId } = req.body
- 
+
   console.log('Request recibido:', title)
- 
+
   if (!videoId || !title) {
     return res.status(400).json({ error: 'Datos incompletos' })
   }
- 
+
   const identifier = getIdentifier(req, clientId)
+
+  // Verificar límite de 10 minutos
+  const LIMIT_MS = 10 * 60 * 1000
+  const log = await getRequestLog()
+  const now = Date.now()
+  if (log[identifier] && now - log[identifier] < LIMIT_MS) {
+    const remaining = Math.ceil((LIMIT_MS - (now - log[identifier])) / 60000)
+    return res.status(429).json({
+      error: `⏳ Puedes pedir otra canción en ${remaining} minuto${remaining !== 1 ? 's' : ''}`
+    })
+  }
+
+  try {
+    let finalVideoId = videoId
+    let finalThumbnail = thumbnail
+
+    // Buscar el video oficial en YouTube
+    try {
+      const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+        params: {
+          part: 'snippet',
+          q: `${title} official video`,
+          type: 'video',
+          maxResults: 1,
+          key: process.env.YOUTUBE_API_KEY
+        }
+      })
+
+      const results = searchRes.data.items
+      if (results && results.length > 0) {
+        finalVideoId = results[0].id.videoId
+        finalThumbnail = results[0].snippet.thumbnails.medium?.url
+        console.log('Video oficial encontrado:', results[0].snippet.title)
+      }
+    } catch (searchErr) {
+      console.log('Búsqueda fallida, usando video original:', searchErr.message)
+    }
+
+    const queue = await getQueue()
+    queue.push({
+      id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      videoId: finalVideoId,
+      title,
+      thumbnail: finalThumbnail || null,
+      requestedBy: identifier,
+      approvedAt: Date.now()
+    })
+    await saveQueue(queue)
+    await incrementVideoStat({ videoId: finalVideoId, title, thumbnail: finalThumbnail })
+
+    // Guardar timestamp del cliente
+    log[identifier] = now
+    await saveRequestLog(log)
+
+    res.json({ ok: true, message: '¡Canción agregada a la cola!' })
+  } catch (error) {
+    console.log('Error en /request:', error.message)
+    res.status(500).json({ error: 'No se pudo enviar la solicitud' })
+  }
+})
  
   try {
     let finalVideoId = videoId
@@ -389,7 +449,6 @@ app.post('/request', async (req, res) => {
     console.log('Error en /request:', error.message)
     res.status(500).json({ error: 'No se pudo enviar la solicitud' })
   }
-})
  
 // ─── PANTALLA ─────────────────────────────────────────────────────────────────
  
