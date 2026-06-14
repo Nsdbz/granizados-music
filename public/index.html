@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Benditos Granizados 🧊</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    /* ─── TOKENS ──────────────────────────────────────────────────────────── */
+    :root {
+      --black:   #0A0A0F;
+      --purple:  #7C3AED;
+      --purple2: #9D5FF3;
+      --pink:    #FF2D9B;
+      --yellow:  #FFE600;
+      --blue:    #00CFFF;
+      --surface: #13131F;
+      --card:    #1C1C2E;
+      --border:  rgba(124,58,237,0.25);
+      --text:    #F0EEFF;
+      --muted:   #6B6B8A;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      font-family: 'Nunito', sans-serif;
+      background: var(--black);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+      overflow-x: hidden;
+    }
+
+    /* ─── FONDO ANIMADO ────────────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 70% 50% at 10% 0%, rgba(124,58,237,0.18) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 90% 100%, rgba(255,45,155,0.12) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* ─── HEADER ───────────────────────────────────────────────────────────── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid var(--purple);
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(124,58,237,0.5);
+    }
+
+    .logo-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brand-text { line-height: 1.1; }
+
+    .brand-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.3rem;
+      letter-spacing: .06em;
+      color: var(--yellow);
+      text-shadow: 0 0 12px rgba(255,230,0,0.4);
+    }
+
+    .brand-sub {
+      font-size: .65rem;
+      font-weight: 700;
+      color: var(--pink);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .live-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(255,45,155,0.12);
+      border: 1px solid rgba(255,45,155,0.3);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: .68rem;
+      font-weight: 800;
+      color: var(--pink);
+      letter-spacing: .06em;
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--pink);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: .3; transform: scale(.7); }
+    }
+
+    /* ─── MAIN ─────────────────────────────────────────────────────────────── */
+    .main {
+      position: relative;
+      z-index: 1;
+      max-width: 480px;
+      margin: 0 auto;
+      padding-bottom: 40px;
+    }
+
+    /* ─── VISTAS ───────────────────────────────────────────────────────────── */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* ─── HERO ─────────────────────────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 28px 20px 20px;
+    }
+
+    .hero-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.4rem;
+      letter-spacing: .08em;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .hero-title span {
+      color: var(--purple2);
+      display: block;
+    }
+
+    .hero-sub {
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* ─── PLAYLISTS ─────────────────────────────────────────────────────────── */
+    .section-label {
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--purple2);
+      padding: 0 16px;
+      margin-bottom: 10px;
+    }
+
+    .playlists-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 0 14px;
+    }
+
+    .playlist-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      transition: transform .15s, border-color .15s, box-shadow .15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .playlist-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,58,237,0.08) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .playlist-card:active {
+      transform: scale(.97);
+      border-color: var(--purple);
+      box-shadow: 0 0 20px rgba(124,58,237,0.25);
+    }
+
+    .pl-emoji {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(124,58,237,0.4);
+    }
+
+    .pl-info { flex: 1; min-width: 0; }
+
+    .pl-name {
+      font-size: 1rem;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .pl-meta {
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .pl-arrow {
+      font-size: 1.3rem;
+      color: var(--purple2);
+      flex-shrink: 0;
+    }
+
+    /* ─── SONGS HEADER ──────────────────────────────────────────────────────── */
+    .songs-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      position: sticky;
+      top: 65px;
+      background: rgba(10,10,15,0.9);
+      backdrop-filter: blur(12px);
+      z-index: 30;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(124,58,237,0.15);
+      border: 1px solid var(--border);
+      color: var(--purple2);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: .8rem;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+
+    .back-btn:active { background: rgba(124,58,237,0.3); }
+
+    .songs-pl-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: .06em;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ─── SEARCH ────────────────────────────────────────────────────────────── */
+    .search-wrap {
+      margin: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 14px;
+      transition: border-color .15s;
+    }
+
+    .search-wrap:focus-within {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
+    }
+
+    .search-wrap svg { color: var(--muted); flex-shrink: 0; }
+
+    .search-wrap input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      font-family: 'Nunito', sans-serif;
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .search-wrap input::placeholder { color: var(--muted); font-weight: 600; }
+
+    /* ─── SONGS LIST ────────────────────────────────────────────────────────── */
+    .songs-list {
+      padding: 0 14px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .song-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--card);
+      border: 1px solid transparent;
+      border-radius: 14px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color .12s, transform .12s, box-shadow .12s;
+    }
+
+    .song-item:active {
+      transform: scale(.97);
+      border-color: var(--purple);
+      box-shadow: 0 0 16px rgba(124,58,237,0.2);
+    }
+
+    .s-thumb {
+      width: 56px;
+      height: 42px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+
+    .s-thumb-ph {
+      background: linear-gradient(135deg, var(--purple), #2D1B69);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--purple2);
+      font-size: 1rem;
+    }
+
+    .s-info { flex: 1; min-width: 0; }
+
+    .s-title {
+      font-size: .88rem;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .s-add {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: 900;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(124,58,237,0.4);
+    }
+
+    /* ─── MODAL ─────────────────────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.75);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+      animation: fadeIn .2s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px 24px 0 0;
+      padding: 8px 20px 40px;
+      width: 100%;
+      max-width: 480px;
+      animation: slideUp .25s cubic-bezier(.34,1.56,.64,1);
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+
+    .modal-handle {
+      width: 40px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 999px;
+      margin: 10px auto 20px;
+    }
+
+    .modal-thumb {
+      width: 140px;
+      height: 105px;
+      border-radius: 14px;
+      object-fit: cover;
+      display: block;
+      margin: 0 auto 16px;
+      border: 2px solid var(--purple);
+      box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+    }
+
+    .modal-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      text-align: center;
+      color: var(--text);
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+
+    .modal-sub {
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .modal-actions { display: flex; gap: 10px; }
+
+    .btn-cancel {
+      flex: 1;
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 12px;
+      padding: 14px;
+      font-family: 'Nunito', sans-serif;
+      font-size: .88rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .btn-cancel:active { background: rgba(255,255,255,.1); }
+
+    .btn-confirm {
+      flex: 2;
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      border: none;
+      color: #fff;
+      border-radius: 12px;
+      padding: 14px;
+      font-family: 'Nunito', sans-serif;
+      font-size: .9rem;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(124,58,237,0.4);
+      transition: opacity .15s, transform .1s;
+    }
+
+    .btn-confirm:active { opacity: .85; transform: scale(.97); }
+    .btn-confirm:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ─── TOAST ─────────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: var(--card);
+      border: 1px solid var(--purple);
+      color: var(--text);
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-size: .85rem;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s, transform .25s;
+      z-index: 200;
+      white-space: nowrap;
+      max-width: 88vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 4px 24px rgba(124,58,237,0.3);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.error {
+      border-color: var(--pink);
+      box-shadow: 0 4px 24px rgba(255,45,155,0.3);
+    }
+
+    /* ─── HELPERS ───────────────────────────────────────────────────────────── */
+    .empty-msg {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: .88rem;
+      font-weight: 600;
+    }
+
+    .loading-msg {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: .88rem;
+      font-weight: 600;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+    /* ─── DECORATIVE DOTS ───────────────────────────────────────────────────── */
+    .deco-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 0 20px;
+    }
+
+    .deco-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--purple);
+      opacity: .3;
+    }
+
+    .deco-dots span:nth-child(2) { background: var(--pink); }
+    .deco-dots span:nth-child(3) { background: var(--yellow); opacity: .4; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="logo-wrap">
+        <img src="/img/logo.jpeg" alt="Benditos Granizados"/>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">Benditos Granizados</div>
+        <div class="brand-sub">🎵 Pide tu canción</div>
+      </div>
+    </div>
+    <div class="live-pill">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ── VISTA PLAYLISTS ───────────────────────────────────────── -->
+    <div id="viewPlaylists" class="view active">
+
+      <div class="hero">
+        <div class="hero-title">¿Qué quieres<span>escuchar? 🧊</span></div>
+        <div class="hero-sub">Elige una playlist y pide tu canción favorita</div>
+      </div>
+
+      <div class="deco-dots">
+        <span></span><span></span><span></span>
+      </div>
+
+      <p class="section-label">Playlists disponibles</p>
+      <div class="playlists-list" id="playlistsGrid"></div>
+
+    </div>
+
+    <!-- ── VISTA CANCIONES ───────────────────────────────────────── -->
+    <div id="viewSongs" class="view">
+
+      <div class="songs-header">
+        <button class="back-btn" onclick="goBack()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Volver
+        </button>
+        <div class="songs-pl-name" id="songsTitle">Playlist</div>
+      </div>
+
+      <div class="search-wrap">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" id="searchInput" placeholder="Buscar canción..." oninput="filterSongs()"/>
+      </div>
+
+      <div class="songs-list" id="songsList"></div>
+
+    </div>
+
+  </main>
+
+  <!-- MODAL CONFIRMACIÓN -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <img class="modal-thumb" id="confirmThumb" src="" alt="" style="display:none"/>
+      <div class="modal-title" id="confirmTitle"></div>
+      <div class="modal-sub">¿La agregamos a la cola? 🎶</div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+        <button class="btn-confirm" onclick="confirmRequest()">¡Sí, pónla! 🔥</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let allSongs = []
+    let selectedSong = null
+
+    function getClientId() {
+      let id = localStorage.getItem('granizados_client_id')
+      if (!id) { id = crypto.randomUUID(); localStorage.setItem('granizados_client_id', id) }
+      return id
+    }
+
+    document.addEventListener('DOMContentLoaded', loadPlaylists)
+
+    async function loadPlaylists() {
+      try {
+        const res = await fetch('/playlists')
+        const playlists = await res.json()
+        const el = document.getElementById('playlistsGrid')
+        const emojis = ['🎵','🔥','⚡','💜','🧊','🎶','💥','✨']
+
+        if (!playlists.length) {
+          el.innerHTML = '<p class="empty-msg">No hay playlists disponibles aún 😴</p>'
+          return
+        }
+
+        el.innerHTML = playlists.map((pl, i) => `
+          <div class="playlist-card" onclick="openPlaylist('${pl.id}', '${escAttr(pl.name)}')">
+            <div class="pl-emoji">${emojis[i % emojis.length]}</div>
+            <div class="pl-info">
+              <div class="pl-name">${pl.name}</div>
+              <div class="pl-meta">${pl.total} canciones disponibles</div>
+            </div>
+            <div class="pl-arrow">›</div>
+          </div>
+        `).join('')
+      } catch (e) {
+        document.getElementById('playlistsGrid').innerHTML = '<p class="empty-msg">Error cargando playlists 😵</p>'
+      }
+    }
+
+    async function openPlaylist(id, name) {
+      document.getElementById('songsTitle').textContent = name
+      document.getElementById('searchInput').value = ''
+      document.getElementById('songsList').innerHTML = '<p class="loading-msg">Cargando canciones...</p>'
+      showView('viewSongs')
+
+      try {
+        const res = await fetch(`/playlists/${id}/songs`)
+        allSongs = await res.json()
+        renderSongs(allSongs)
+      } catch (e) {
+        document.getElementById('songsList').innerHTML = '<p class="empty-msg">Error cargando canciones 😵</p>'
+      }
+    }
+
+    function renderSongs(songs) {
+      const el = document.getElementById('songsList')
+      if (!songs.length) { el.innerHTML = '<p class="empty-msg">No se encontraron canciones 🔍</p>'; return }
+
+      el.innerHTML = songs.map(s => `
+        <div class="song-item" onclick="openConfirm('${s.videoId}', '${escAttr(s.title)}', '${s.thumbnail || ''}')">
+          ${s.thumbnail
+            ? `<img class="s-thumb" src="${s.thumbnail}" alt="${escAttr(s.title)}">`
+            : '<div class="s-thumb s-thumb-ph">🎵</div>'
+          }
+          <div class="s-info">
+            <div class="s-title">${s.title}</div>
+          </div>
+          <div class="s-add">+</div>
+        </div>
+      `).join('')
+    }
+
+    function filterSongs() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim()
+      renderSongs(q ? allSongs.filter(s => s.title.toLowerCase().includes(q)) : allSongs)
+    }
+
+    function goBack() { showView('viewPlaylists'); allSongs = [] }
+    function showView(id) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
+      document.getElementById(id).classList.add('active')
+    }
+
+    function openConfirm(videoId, title, thumbnail) {
+      selectedSong = { videoId, title, thumbnail }
+      document.getElementById('confirmTitle').textContent = title
+      const img = document.getElementById('confirmThumb')
+      if (thumbnail) { img.src = thumbnail; img.style.display = 'block' }
+      else img.style.display = 'none'
+      document.getElementById('confirmModal').classList.add('open')
+    }
+
+    function closeModal() { document.getElementById('confirmModal').classList.remove('open'); selectedSong = null }
+    document.addEventListener('click', e => { if (e.target === document.getElementById('confirmModal')) closeModal() })
+
+    async function confirmRequest() {
+      if (!selectedSong) return
+      const btn = document.querySelector('.btn-confirm')
+      btn.disabled = true; btn.textContent = 'Enviando...'
+
+      try {
+        const res = await fetch('/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...selectedSong, clientId: getClientId() })
+        })
+        const data = await res.json()
+        closeModal()
+        showToast(data.ok ? '🔥 ¡Canción en camino!' : data.error, !data.ok)
+      } catch (e) {
+        showToast('Error de conexión 😵', true)
+      } finally {
+        btn.disabled = false; btn.textContent = '¡Sí, pónla! 🔥'
+      }
+    }
+
+    function showToast(msg, isError = false) {
+      const el = document.getElementById('toast')
+      el.textContent = msg
+      el.className = 'toast show' + (isError ? ' error' : '')
+      setTimeout(() => el.classList.remove('show'), 3000)
+    }
+
+    function escAttr(str) { return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') }
+  </script>
+</body>
+</html>

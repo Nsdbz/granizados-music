@@ -1,0 +1,127 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+ 
+/* ─── PANTALLA DE INICIO ─────────────────────────────────────────────────────── */
+ 
+.start-screen {
+  position: fixed;
+  inset: 0;
+  background: #0f0f0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+ 
+.start-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+ 
+.start-icon { font-size: 4rem; }
+ 
+.start-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #fff;
+}
+ 
+.start-sub { font-size: 1rem; color: #555; }
+ 
+.start-btn {
+  margin-top: 16px;
+  background: #FF0000;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 40px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+ 
+.start-btn:hover { background: #cc0000; }
+ 
+/* ─── PLAYER ─────────────────────────────────────────────────────────────────── */
+ 
+.player-screen {
+  position: fixed;
+  inset: 0;
+  background: #000;
+}
+ 
+#ytPlayer {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+ 
+#ytPlayer iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none;
+}
+ 
+/* ─── PANTALLA DE ESPERA ─────────────────────────────────────────────────────── */
+ 
+.waiting-screen {
+  position: absolute;
+  inset: 0;
+  background: #0f0f0f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 5;
+}
+ 
+.waiting-icon { font-size: 3.5rem; }
+ 
+.waiting-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+}
+ 
+.waiting-sub {
+  font-size: .95rem;
+  color: #555;
+  text-align: center;
+  max-width: 300px;
+  line-height: 1.5;
+}
+ 
+.waiting-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+ 
+.waiting-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #FF0000;
+  animation: dot 1.4s ease-in-out infinite;
+}
+ 
+.waiting-dots span:nth-child(2) { animation-delay: .2s; }
+.waiting-dots span:nth-child(3) { animation-delay: .4s; }
+ 
+@keyframes dot {
+  0%, 80%, 100% { opacity: .2; transform: scale(.8); }
+  40%            { opacity: 1;  transform: scale(1.2); }
+}

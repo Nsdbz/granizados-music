@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — GranizadosMusic</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+ 
+  <div class="top-bar">
+    <div class="top-brand">🎬 GranizadosMusic</div>
+    <div class="top-right">
+      <span class="admin-tag">Panel Admin</span>
+    </div>
+  </div>
+ 
+  <div class="layout">
+ 
+    <!-- ── COLUMNA IZQUIERDA ─────────────────────────────────────── -->
+    <div class="col-left">
+ 
+      <!-- Solicitudes pendientes -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Solicitudes pendientes
+            <span class="badge" id="pendingBadge" style="display:none">0</span>
+          </h2>
+          <p class="card-sub">Canciones que los clientes quieren pedir</p>
+        </div>
+        <div id="pendingList">
+          <p class="empty-msg">No hay solicitudes pendientes</p>
+        </div>
+      </div>
+ 
+      <!-- Cola actual -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Cola de reproducción
+            <span class="badge green" id="queueBadge">0</span>
+          </h2>
+          <p class="card-sub">Videos que se reproducirán en la pantalla</p>
+        </div>
+        <div id="queueList">
+          <p class="empty-msg">La cola está vacía</p>
+        </div>
+      </div>
+ 
+      <!-- Estadísticas -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Estadísticas
+            <span class="stat-total">
+              <span id="totalCount">0</span> pedidos totales
+            </span>
+          </h2>
+        </div>
+        <div id="statsList">
+          <p class="empty-msg">Aún no hay estadísticas</p>
+        </div>
+      </div>
+ 
+    </div>
+ 
+    <!-- ── COLUMNA DERECHA ────────────────────────────────────────── -->
+    <div class="col-right">
+ 
+      <!-- Agregar canción suelta a la cola -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Agregar canción a la cola</h2>
+          <p class="card-sub">Busca cualquier canción y agrégala directamente</p>
+        </div>
+        <div class="form-group search-row">
+          <input type="text" id="songSearchInput" placeholder="Buscar canción o artista..." />
+          <button class="btn-search" onclick="searchSongs()">Buscar</button>
+        </div>
+        <div id="songSearchResults"></div>
+      </div>
+ 
+      <!-- Agregar playlist -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Agregar playlist de YouTube</h2>
+          <p class="card-sub">Pega el link de cualquier playlist pública de YouTube</p>
+        </div>
+        <div class="form-group">
+          <input type="text" id="playlistUrl" placeholder="https://www.youtube.com/playlist?list=..." />
+        </div>
+        <div class="form-group">
+          <input type="text" id="playlistName" placeholder="Nombre de la playlist (ej: Reggaeton)" />
+        </div>
+        <button class="btn-primary" onclick="addPlaylist()">Cargar playlist</button>
+        <div id="loadProgress" style="display:none" class="progress-msg">⏳ Cargando canciones...</div>
+      </div>
+ 
+      <!-- Mis playlists -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Playlists activas</h2>
+          <p class="card-sub">Las playlists disponibles para los clientes</p>
+        </div>
+        <div id="playlistsList">
+          <p class="empty-msg">No hay playlists. Agrega una arriba.</p>
+        </div>
+      </div>
+ 
+    </div>
+ 
+  </div>
+ 
+  <div class="toast" id="toast"></div>
+ 
+  <script src="/js/admin.js"></script>
+</body>
+</html>

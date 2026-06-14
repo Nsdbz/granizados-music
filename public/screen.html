@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GranizadosMusic — Pantalla</title>
+  <link rel="stylesheet" href="/css/screen.css"/>
+</head>
+<body>
+
+  <!-- PANTALLA DE INICIO -->
+  <div class="start-screen" id="startScreen">
+    <div class="start-content">
+      <div class="start-icon">🎬</div>
+      <div class="start-title">GranizadosMusic</div>
+      <div class="start-sub">Pantalla del local</div>
+      <button class="start-btn" onclick="startPlayer()">▶ Iniciar pantalla</button>
+    </div>
+  </div>
+
+  <!-- PLAYER -->
+  <div class="player-screen" id="playerScreen" style="display:none">
+    <div id="ytPlayer"></div>
+
+    <!-- Pantalla de espera cuando no hay nada en la cola -->
+    <div class="waiting-screen" id="waitingScreen">
+      <div class="waiting-icon">🎵</div>
+      <div class="waiting-title">GranizadosMusic</div>
+      <div class="waiting-sub">Escanea el QR para pedir una canción</div>
+      <div class="waiting-dots">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/js/screen.js"></script>
+</body>
+</html>
