@@ -706,17 +706,35 @@ app.post('/request', async (req, res) => {
   }
 
   try {
+    // Buscar el video oficial en YouTube para evitar imágenes estáticas
+    // Si falla o se agota la cuota, se usa el video original como respaldo
+    let finalVideoId = videoId
+    let finalTitle = title
+    let finalThumbnail = thumbnail || null
+
+    try {
+      const official = await findOfficialVideo(title, videoId)
+      if (official) {
+        finalVideoId = official.videoId
+        finalTitle = official.title
+        finalThumbnail = official.thumbnail
+        console.log(`🎬 Video oficial encontrado: "${finalTitle}"`)
+      }
+    } catch (e) {
+      console.log('No se pudo buscar video oficial, usando original:', e.message)
+    }
+
     const queue = await getQueue()
     queue.push({
       id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      videoId,
-      title,
-      thumbnail: thumbnail || null,
+      videoId: finalVideoId,
+      title: finalTitle,
+      thumbnail: finalThumbnail,
       requestedBy: identifier,
       approvedAt: Date.now()
     })
     await saveQueue(queue)
-    await incrementDailyStat({ videoId, title, thumbnail })
+    await incrementDailyStat({ videoId: finalVideoId, title: finalTitle, thumbnail: finalThumbnail })
 
     if (LIMIT_MS > 0) {
       log[identifier] = now
