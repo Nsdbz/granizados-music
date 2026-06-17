@@ -714,6 +714,30 @@ app.post('/admin/background-playlist', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── ADMIN: INFO DE CANCIÓN POR URL (sin gastar cuota de API) ────────────────
+// Usa el endpoint oEmbed de YouTube, que es público y gratuito.
+
+app.get('/admin/song-info', adminAuth, async (req, res) => {
+  const { videoId } = req.query
+  if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: 'videoId inválido' })
+  }
+  try {
+    const oembedRes = await axios.get('https://www.youtube.com/oembed', {
+      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' },
+      timeout: 8000,
+      validateStatus: s => s < 500
+    })
+    if (oembedRes.status !== 200) {
+      return res.status(404).json({ error: 'Video no encontrado o no embebible' })
+    }
+    const { title, thumbnail_url } = oembedRes.data
+    res.json({ videoId, title, thumbnail: thumbnail_url })
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo obtener info del video' })
+  }
+})
+
 // ─── CLIENTE: VER PLAYLISTS Y CANCIONES ───────────────────────────────────────
 
 app.get('/playlists', async (req, res) => {

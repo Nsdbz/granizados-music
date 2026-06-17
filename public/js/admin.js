@@ -9,10 +9,93 @@ let selectedForMerge = new Set()
 document.addEventListener('DOMContentLoaded', () => {
   init()
   document.getElementById('songSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchSongs() })
+  document.getElementById('songUrlInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadFromUrl() })
   document.getElementById('playlistUrl')?.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('playlistName').focus() })
   document.getElementById('playlistName')?.addEventListener('keydown', e => { if (e.key === 'Enter') addPlaylist() })
   document.getElementById('addToPlSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchForPlaylist() })
 })
+
+// ─── TAB BUSCAR / URL ─────────────────────────────────────────────────────────
+
+function switchAddTab(tab) {
+  const isSearch = tab === 'search'
+  document.getElementById('panelSearch').style.display = isSearch ? '' : 'none'
+  document.getElementById('panelUrl').style.display   = isSearch ? 'none' : ''
+  document.getElementById('tabSearch').className = 'btn-sm ' + (isSearch ? 'btn-add' : 'btn-ghost')
+  document.getElementById('tabUrl').className    = 'btn-sm ' + (isSearch ? 'btn-ghost' : 'btn-add')
+  document.getElementById('urlPreview').style.display = 'none'
+  document.getElementById('urlError').style.display   = 'none'
+}
+
+function extractVideoId(input) {
+  input = (input || '').trim()
+  const short = input.match(/youtu\.be\/([A-Za-z0-9_-]{11})/)
+  if (short) return short[1]
+  const long = input.match(/[?&]v=([A-Za-z0-9_-]{11})/)
+  if (long) return long[1]
+  const embed = input.match(/\/(?:embed|v)\/([A-Za-z0-9_-]{11})/)
+  if (embed) return embed[1]
+  if (/^[A-Za-z0-9_-]{11}$/.test(input)) return input
+  return null
+}
+
+let urlSong = null
+
+async function loadFromUrl() {
+  const input = document.getElementById('songUrlInput').value
+  const preview = document.getElementById('urlPreview')
+  const errorEl = document.getElementById('urlError')
+
+  preview.style.display = 'none'
+  errorEl.style.display = 'none'
+  urlSong = null
+
+  const videoId = extractVideoId(input)
+  if (!videoId) {
+    errorEl.textContent = 'URL o ID de YouTube no válido'
+    errorEl.style.display = 'block'
+    return
+  }
+
+  const btn = document.querySelector('[onclick="loadFromUrl()"]')
+  if (btn) { btn.disabled = true; btn.textContent = '...' }
+
+  try {
+    const res = await fetch(`/admin/song-info?videoId=${videoId}`)
+    const data = await res.json()
+
+    if (!res.ok || data.error) {
+      errorEl.textContent = data.error || 'No se pudo obtener información del video'
+      errorEl.style.display = 'block'
+      return
+    }
+
+    urlSong = { videoId, title: data.title, thumbnail: data.thumbnail }
+    document.getElementById('urlThumb').src = data.thumbnail || ''
+    document.getElementById('urlTitle').textContent = data.title
+    document.getElementById('urlVideoId').textContent = `ID: ${videoId}`
+    preview.style.display = 'block'
+
+  } catch (e) {
+    errorEl.textContent = 'Error de conexión'
+    errorEl.style.display = 'block'
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Cargar' }
+  }
+}
+
+async function addUrlToQueue() {
+  if (!urlSong) return
+  await addToQueue(urlSong.videoId, urlSong.title, urlSong.thumbnail)
+  document.getElementById('songUrlInput').value = ''
+  document.getElementById('urlPreview').style.display = 'none'
+  urlSong = null
+}
+
+function addUrlToPlaylist() {
+  if (!urlSong) return
+  openAddToPlaylist(urlSong.videoId, urlSong.title, urlSong.thumbnail)
+}
 
 function init() {
   loadPlaylists()

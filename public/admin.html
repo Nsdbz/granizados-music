@@ -91,12 +91,44 @@
       <!-- Buscar y agregar canción -->
       <div class="card">
         <div class="card-title">🔍 Agregar canción</div>
-        <div class="card-sub">Agrégala a la cola o a una playlist</div>
-        <div class="search-row">
-          <input type="text" class="search-input" id="songSearchInput" placeholder="Buscar canción o artista..."/>
-          <button class="btn-sm btn-add" onclick="searchSongs()" style="padding:0 16px;height:42px">Buscar</button>
+        <div class="card-sub">Busca por nombre o pega el link de YouTube</div>
+
+        <!-- Tab switcher -->
+        <div style="display:flex;gap:6px;margin-bottom:14px">
+          <button id="tabSearch" class="btn-sm btn-add" style="flex:1;padding:8px" onclick="switchAddTab('search')">🔍 Buscar</button>
+          <button id="tabUrl" class="btn-sm btn-ghost" style="flex:1;padding:8px" onclick="switchAddTab('url')">🔗 URL de YouTube</button>
         </div>
-        <div id="songSearchResults"></div>
+
+        <!-- Panel: buscar -->
+        <div id="panelSearch">
+          <div class="search-row">
+            <input type="text" class="search-input" id="songSearchInput" placeholder="Buscar canción o artista..."/>
+            <button class="btn-sm btn-add" onclick="searchSongs()" style="padding:0 16px;height:42px">Buscar</button>
+          </div>
+          <div id="songSearchResults"></div>
+        </div>
+
+        <!-- Panel: URL -->
+        <div id="panelUrl" style="display:none">
+          <div class="search-row">
+            <input type="text" class="search-input" id="songUrlInput" placeholder="https://www.youtube.com/watch?v=..."/>
+            <button class="btn-sm btn-add" onclick="loadFromUrl()" style="padding:0 16px;height:42px">Cargar</button>
+          </div>
+          <div id="urlPreview" style="display:none;background:var(--card2);border-radius:12px;padding:12px;margin-top:4px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <img id="urlThumb" src="" alt="" style="width:72px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border);flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div id="urlTitle" style="font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+                <div id="urlVideoId" style="font-size:.7rem;color:var(--muted);margin-top:3px"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn-sm btn-add" style="flex:1;padding:8px" onclick="addUrlToQueue()">+ Cola</button>
+              <button class="btn-sm btn-ghost" style="flex:1;padding:8px" onclick="addUrlToPlaylist()">+ Playlist</button>
+            </div>
+          </div>
+          <div id="urlError" style="display:none;font-size:.78rem;font-weight:700;color:var(--pink);margin-top:8px;text-align:center"></div>
+        </div>
       </div>
 
       <!-- Agregar playlist -->
