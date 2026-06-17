@@ -176,6 +176,14 @@ function isLowQualityTitle(title) {
   return LOW_QUALITY_KEYWORDS.some(kw => lower.includes(kw))
 }
 
+// Limpia el título quitando paréntesis y corchetes con su contenido
+function cleanTitle(title) {
+  return title
+    .replace(/\(.*?\)/g, "")  // quita (Audio Oficial), (Lyric Video), etc.
+    .replace(/\[.*?\]/g, "")  // quita [Official Audio], [4K], etc.
+    .trim()
+}
+
 // Dado el título de una canción, busca en YouTube el mejor video oficial disponible
 // que no sea de baja calidad y que sea embeddable.
 async function findOfficialVideo(originalTitle, originalVideoId) {
@@ -183,7 +191,7 @@ async function findOfficialVideo(originalTitle, originalVideoId) {
     const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
       params: {
         part: 'snippet',
-        q: originalTitle,
+        q: `${cleanTitle(originalTitle)} video`,
         type: 'video',
         videoCategoryId: '10', // categoría Música
         maxResults: 10,
@@ -513,7 +521,7 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
         const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
           params: {
             part: 'snippet',
-            q: `${song.title} lyrics`,
+            q: `${song.title} video`,
             type: 'video',
             maxResults: 10,
             key: process.env.YOUTUBE_API_KEY
