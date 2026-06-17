@@ -199,15 +199,11 @@ async function findOfficialVideo(originalTitle, originalVideoId) {
       }
     })
 
-    const candidates = (searchRes.data.items || []).filter(item => {
-      const vid = item.id.videoId
-      if (vid === originalVideoId) return false
-      return !isLowQualityTitle(item.snippet.title)
-    })
+    const allItems = (searchRes.data.items || []).filter(item => item.id.videoId !== originalVideoId)
+    if (!allItems.length) return null
 
-    // Verificar embeddability en lote
-    if (!candidates.length) return null
-    const ids = candidates.map(c => c.id.videoId).join(',')
+    // Verificar embeddability en lote para todos los candidatos
+    const ids = allItems.map(c => c.id.videoId).join(',')
     const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
       params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
     })
@@ -217,8 +213,11 @@ async function findOfficialVideo(originalTitle, originalVideoId) {
         .map(v => v.id)
     )
 
-    const winner = candidates.find(c => embeddableIds.has(c.id.videoId))
-    if (!winner) return null
+    const embeddable = allItems.filter(c => embeddableIds.has(c.id.videoId))
+    if (!embeddable.length) return null
+
+    // Preferir videos sin keywords de baja calidad, pero si no hay, usar el primero embeddable
+    const winner = embeddable.find(c => !isLowQualityTitle(c.snippet.title)) || embeddable[0]
 
     return {
       videoId: winner.id.videoId,
@@ -433,6 +432,19 @@ app.post('/admin/playlists/:id/toggle', adminAuth, async (req, res) => {
     playlist.active = playlist.active === false ? true : false
     await savePlaylists(playlists)
     res.json({ ok: true, active: playlist.active })
+  } catch (error) { res.status(500).json({ error: error.message }) }
+})
+
+app.post('/admin/playlists/:id/cover', adminAuth, async (req, res) => {
+  const { cover } = req.body
+  if (!cover) return res.status(400).json({ error: 'Falta la URL de la portada' })
+  try {
+    const playlists = await getPlaylists()
+    const playlist = playlists.find(p => p.id === req.params.id)
+    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+    playlist.cover = cover
+    await savePlaylists(playlists)
+    res.json({ ok: true })
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 

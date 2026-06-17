@@ -29,13 +29,6 @@
     <!-- ── COLUMNA IZQUIERDA ─────────────────────────────────────── -->
     <div class="col">
 
-      <!-- Solicitudes -->
-      <div class="card">
-        <div class="card-title">🔔 Solicitudes <span class="badge badge-red" id="pendingBadge" style="display:none">0</span></div>
-        <div class="card-sub">Canciones que los clientes quieren pedir</div>
-        <div id="pendingList"><p class="empty-msg">No hay solicitudes pendientes 🎉</p></div>
-      </div>
-
       <!-- Cola -->
       <div class="card">
         <div class="card-title">🎬 Cola de reproducción <span class="badge badge-green" id="queueBadge">0</span></div>
@@ -153,6 +146,20 @@
       <div id="addToPlResults"></div>
       <div style="margin-top:14px;font-size:.78rem;font-weight:700;color:var(--muted)">Selecciona la playlist destino:</div>
       <div id="targetPlaylists" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- Modal: portada de playlist -->
+  <div class="modal-overlay" id="coverModal">
+    <div class="modal">
+      <button class="modal-close-btn" onclick="closeCoverModal()">✕</button>
+      <div class="modal-title">🖼 Portada de playlist</div>
+      <div class="modal-sub" id="coverModalTitle"></div>
+      <div class="form-group" style="margin-top:12px">
+        <input type="text" class="form-input" id="coverPasteArea" placeholder="Pega aquí la URL de la imagen..." oninput="onCoverPaste(this)"/>
+      </div>
+      <img id="coverPreview" src="" alt="Preview" style="display:none;width:100%;border-radius:12px;margin-bottom:12px;max-height:200px;object-fit:cover;border:1px solid var(--border)"/>
+      <button class="btn-primary" onclick="saveCover()">Guardar portada</button>
     </div>
   </div>
 

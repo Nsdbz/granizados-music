@@ -249,6 +249,16 @@
       box-shadow: 0 0 12px rgba(0,207,255,0.15);
     }
 
+    .pl-cover {
+      width: 50px;
+      height: 50px;
+      border-radius: 14px;
+      object-fit: cover;
+      flex-shrink: 0;
+      border: 1px solid rgba(0,207,255,0.25);
+      box-shadow: 0 0 12px rgba(0,207,255,0.15);
+    }
+
     .pl-info { flex: 1; min-width: 0; }
 
     .pl-name {
@@ -666,7 +676,10 @@
         }
         el.innerHTML = playlists.map((pl, i) => `
           <div class="playlist-card" onclick="openPlaylist('${pl.id}', '${escAttr(pl.name)}')">
-            <div class="pl-emoji">${emojis[i % emojis.length]}</div>
+            ${pl.cover
+              ? `<img class="pl-cover" src="${pl.cover}" alt="${escAttr(pl.name)}">`
+              : `<div class="pl-emoji">${emojis[i % emojis.length]}</div>`
+            }
             <div class="pl-info">
               <div class="pl-name">${pl.name}</div>
               <div class="pl-meta">${pl.total} canciones disponibles</div>
