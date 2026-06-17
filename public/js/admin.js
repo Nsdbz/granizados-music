@@ -16,12 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function init() {
   loadPlaylists()
-  loadPending()
   loadQueue()
   loadLimit()
   loadReports()
   loadBlocked()
-  setInterval(loadPending, 10000)
   setInterval(loadQueue, 10000)
   setInterval(loadBlocked, 15000)
 }
@@ -217,7 +215,7 @@ function renderPlaylists(playlists) {
         <div class="pl-actions">
           <button class="btn-sm ${isActive ? 'btn-toggle-on' : 'btn-toggle-off'}" onclick="togglePlaylist('${pl.id}','${esc(pl.name)}')">${isActive ? '● ON' : '○ OFF'}</button>
           ${!pl.merged ? `<button class="btn-sm btn-ghost" onclick="reloadPlaylist('${pl.id}','${esc(pl.name)}')">↺</button>` : ''}
-          <button class="btn-sm btn-ghost" onclick="fixPlaylist('${pl.id}','${esc(pl.name)}')">🔧</button>
+          <button class="btn-sm btn-ghost" onclick="openCoverModal('${pl.id}','${esc(pl.name)}')">🖼</button>
           <button class="btn-sm btn-danger" onclick="deletePlaylist('${pl.id}','${esc(pl.name)}')">✕</button>
         </div>
       </div>
@@ -335,90 +333,6 @@ async function reloadPlaylist(id, name) {
     if (data.ok) { showToast(`✅ "${name}" — ${data.total} canciones`); loadPlaylists() }
     else showToast(data.error, true)
   } catch (e) { showToast('Error de conexión', true) }
-}
-
-async function fixPlaylist(id, name) {
-  if (!confirm(`¿Reparar "${name}"?\n\nSe verificará cada canción y se reemplazarán los videos bloqueados. Esto puede tardar varios minutos dependiendo del tamaño de la playlist.`)) return
-
-  showToast(`🔧 Reparando "${name}"... esto puede tardar`)
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutos máximo
-
-  try {
-    const res = await fetch(`/admin/playlists/${id}/fix`, {
-      method: 'POST',
-      signal: controller.signal
-    })
-    clearTimeout(timeoutId)
-    const data = await res.json()
-    if (data.ok) {
-      const parts = []
-      if (data.qualityFixed > 0) parts.push(`${data.qualityFixed} calidad mejorada`)
-      if (data.fixed > 0) parts.push(`${data.fixed} bloqueadas reemplazadas`)
-      if (data.removed > 0) parts.push(`${data.removed} eliminadas`)
-      const msg = parts.length
-        ? `✅ "${name}" — ${parts.join(', ')}`
-        : `✅ "${name}" — sin problemas encontrados`
-      showToast(msg)
-      loadPlaylists()
-      loadBlocked()
-    } else {
-      showToast(data.error, true)
-    }
-  } catch (e) {
-    clearTimeout(timeoutId)
-    if (e.name === 'AbortError') {
-      showToast('La reparación tardó demasiado. Intenta con una playlist más pequeña.', true)
-    } else {
-      showToast('Error de conexión', true)
-    }
-  }
-}
-
-// ─── SOLICITUDES PENDIENTES ───────────────────────────────────────────────────
-
-async function loadPending() {
-  try {
-    const res = await fetch('/admin/pending')
-    const pending = await res.json()
-    const badge = document.getElementById('pendingBadge')
-    badge.textContent = pending.length
-    badge.style.display = pending.length > 0 ? 'inline-flex' : 'none'
-    const el = document.getElementById('pendingList')
-    if (!pending.length) { el.innerHTML = '<p class="empty-msg">No hay solicitudes 🎉</p>'; return }
-    el.innerHTML = pending.map(p => `
-      <div class="request-row" id="req-${p.id}">
-        ${p.thumbnail ? `<img src="${p.thumbnail}" alt="">` : '<div class="thumb-ph">🎵</div>'}
-        <div class="req-info">
-          <div class="req-title">${p.title}</div>
-          <div class="req-time">${timeAgo(p.timestamp)}</div>
-        </div>
-        <div class="req-actions">
-          <button class="btn-sm btn-approve" onclick="approve('${p.id}','${esc(p.title)}')">✓</button>
-          <button class="btn-sm btn-danger" onclick="reject('${p.id}')">✕</button>
-        </div>
-      </div>
-    `).join('')
-  } catch (e) {}
-}
-
-async function approve(id, title) {
-  try {
-    const res = await fetch(`/admin/pending/${id}/approve`, { method: 'POST' })
-    if ((await res.json()).ok) { showToast(`✅ "${title}" en cola`); loadPending(); loadQueue() }
-  } catch (e) { showToast('Error de conexión', true) }
-}
-
-async function reject(id) {
-  try {
-    const res = await fetch(`/admin/pending/${id}/reject`, { method: 'POST' })
-    if ((await res.json()).ok) {
-      const c = document.getElementById(`req-${id}`)
-      if (c) { c.style.opacity = '0'; c.style.transition = 'opacity .3s' }
-      setTimeout(loadPending, 350)
-    }
-  } catch (e) {}
 }
 
 // ─── COLA ─────────────────────────────────────────────────────────────────────
@@ -547,4 +461,49 @@ function timeAgo(ts) {
   if (m < 1) return 'hace un momento'
   if (m < 60) return `hace ${m} min`
   return `hace ${Math.floor(m / 60)} h`
+}
+// ─── PORTADA DE PLAYLIST ──────────────────────────────────────────────────────
+
+let coverPlaylistId = null
+
+function openCoverModal(id, name) {
+  coverPlaylistId = id
+  document.getElementById('coverModalTitle').textContent = name
+  document.getElementById('coverPasteArea').value = ''
+  document.getElementById('coverPreview').style.display = 'none'
+  document.getElementById('coverPreview').src = ''
+  document.getElementById('coverModal').classList.add('open')
+}
+
+function closeCoverModal() {
+  document.getElementById('coverModal').classList.remove('open')
+  coverPlaylistId = null
+}
+
+function onCoverPaste(e) {
+  const text = e.target.value.trim()
+  if (!text) return
+  const preview = document.getElementById('coverPreview')
+  preview.src = text
+  preview.style.display = 'block'
+  preview.onerror = () => { preview.style.display = 'none'; showToast('URL de imagen inválida', true) }
+}
+
+async function saveCover() {
+  if (!coverPlaylistId) return
+  const url = document.getElementById('coverPasteArea').value.trim()
+  if (!url) { showToast('Pega una URL de imagen primero', true); return }
+  try {
+    const res = await fetch(`/admin/playlists/${coverPlaylistId}/cover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cover: url })
+    })
+    const data = await res.json()
+    if (data.ok) {
+      showToast('✅ Portada guardada')
+      closeCoverModal()
+      loadPlaylists()
+    } else showToast(data.error, true)
+  } catch (e) { showToast('Error de conexión', true) }
 }
