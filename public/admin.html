@@ -72,6 +72,22 @@
         </div>
       </div>
 
+      <!-- Playlist de fondo -->
+      <div class="card">
+        <div class="card-title">🎲 Playlist de fondo</div>
+        <div class="card-sub">Se reproduce cuando no hay canciones en cola. Si no eliges ninguna, se usa una playlist aleatoria.</div>
+        <div class="limit-row">
+          <div class="limit-label">
+            Playlist activa
+            <span id="bgPlaylistStatus">Cargando...</span>
+          </div>
+          <select class="limit-input" id="bgPlaylistSelect" style="width:auto;flex:1;font-family:'Nunito',sans-serif;font-size:.82rem;padding:8px 10px">
+            <option value="">— Aleatoria —</option>
+          </select>
+          <button class="btn-sm btn-save" onclick="saveBgPlaylist()">Guardar</button>
+        </div>
+      </div>
+
       <!-- Buscar y agregar canción -->
       <div class="card">
         <div class="card-title">🔍 Agregar canción</div>

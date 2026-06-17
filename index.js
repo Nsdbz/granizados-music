@@ -118,14 +118,29 @@ async function getAvailableDates() {
   return dateStrs.filter((_, i) => results[i] && Object.keys(results[i]).length > 0)
 }
 
-// ─── AUTO PLAYLIST (solo playlists activas) ───────────────────────────────────
+// ─── AUTO PLAYLIST (playlist de fondo o aleatoria entre activas) ─────────────
+
+async function getBackgroundPlaylistId() {
+  try { return await redis.get('background_playlist_id') || null } catch (e) { return null }
+}
 
 async function getRandomSongFromPlaylists() {
   try {
     const playlists = await getPlaylists()
     const active = playlists.filter(p => p.active !== false)
     if (!active.length) return null
-    const playlist = active[Math.floor(Math.random() * active.length)]
+
+    // Si hay playlist de fondo configurada, usar solo esa
+    const bgId = await getBackgroundPlaylistId()
+    let playlist = null
+    if (bgId) {
+      playlist = active.find(p => p.id === bgId)
+    }
+    // Si no hay configurada o no está activa, elegir aleatoriamente
+    if (!playlist) {
+      playlist = active[Math.floor(Math.random() * active.length)]
+    }
+
     const songs = await getPlaylistSongs(playlist.id)
     if (!songs.length) return null
     const song = songs[Math.floor(Math.random() * songs.length)]
@@ -676,6 +691,27 @@ app.delete('/admin/blocked/:videoId', adminAuth, async (req, res) => {
 app.delete('/admin/blocked', adminAuth, async (req, res) => {
   try { await redis.set('blocked_log', []); res.json({ ok: true }) }
   catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── ADMIN: PLAYLIST DE FONDO ────────────────────────────────────────────────
+
+app.get('/admin/background-playlist', adminAuth, async (req, res) => {
+  try {
+    const id = await getBackgroundPlaylistId()
+    res.json({ id })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/admin/background-playlist', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.body
+    if (id) {
+      await redis.set('background_playlist_id', id)
+    } else {
+      await redis.del('background_playlist_id')
+    }
+    res.json({ ok: true, id: id || null })
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 // ─── CLIENTE: VER PLAYLISTS Y CANCIONES ───────────────────────────────────────

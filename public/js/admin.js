@@ -20,6 +20,7 @@ function init() {
   loadLimit()
   loadReports()
   loadBlocked()
+  loadBgPlaylist()
   setInterval(loadQueue, 10000)
   setInterval(loadBlocked, 15000)
 }
@@ -181,6 +182,63 @@ document.addEventListener('click', e => {
   const mergeModal = document.getElementById('mergeModal')
   if (e.target === mergeModal) closeMergeModal()
 })
+
+
+// ─── PLAYLIST DE FONDO ────────────────────────────────────────────────────────
+
+async function loadBgPlaylist() {
+  try {
+    const [resPlaylists, resBg] = await Promise.all([
+      fetch('/admin/playlists'),
+      fetch('/admin/background-playlist')
+    ])
+    const playlists = await resPlaylists.json()
+    const { id: currentId } = await resBg.json()
+
+    const select = document.getElementById('bgPlaylistSelect')
+    select.innerHTML = '<option value="">— Aleatoria entre activas —</option>'
+    playlists.filter(p => p.active !== false).forEach(pl => {
+      const opt = document.createElement('option')
+      opt.value = pl.id
+      opt.textContent = pl.name
+      if (pl.id === currentId) opt.selected = true
+      select.appendChild(opt)
+    })
+
+    const current = playlists.find(p => p.id === currentId)
+    document.getElementById('bgPlaylistStatus').textContent = current
+      ? `Actualmente: ${current.name}`
+      : 'Sin playlist fija (aleatoria)'
+  } catch (e) {
+    document.getElementById('bgPlaylistStatus').textContent = 'Error cargando'
+  }
+}
+
+async function saveBgPlaylist() {
+  const id = document.getElementById('bgPlaylistSelect').value
+  const btn = document.querySelector('[onclick="saveBgPlaylist()"]')
+  if (btn) { btn.disabled = true; btn.textContent = '...' }
+  try {
+    const res = await fetch('/admin/background-playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id || null })
+    })
+    const data = await res.json()
+    if (data.ok) {
+      const select = document.getElementById('bgPlaylistSelect')
+      const name = select.options[select.selectedIndex].textContent
+      showToast(id ? `✅ Fondo: ${name}` : '✅ Fondo: aleatoria')
+      document.getElementById('bgPlaylistStatus').textContent = id
+        ? `Actualmente: ${name}`
+        : 'Sin playlist fija (aleatoria)'
+    } else showToast(data.error, true)
+  } catch (e) {
+    showToast('Error de conexión', true)
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar' }
+  }
+}
 
 // ─── PLAYLISTS ────────────────────────────────────────────────────────────────
 
