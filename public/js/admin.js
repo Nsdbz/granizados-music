@@ -353,9 +353,13 @@ async function fixPlaylist(id, name) {
     clearTimeout(timeoutId)
     const data = await res.json()
     if (data.ok) {
-      const msg = data.fixed === 0 && data.removed === 0
-        ? `✅ "${name}" — sin videos bloqueados`
-        : `✅ "${name}" — ${data.fixed} reemplazadas, ${data.removed} eliminadas`
+      const parts = []
+      if (data.qualityFixed > 0) parts.push(`${data.qualityFixed} calidad mejorada`)
+      if (data.fixed > 0) parts.push(`${data.fixed} bloqueadas reemplazadas`)
+      if (data.removed > 0) parts.push(`${data.removed} eliminadas`)
+      const msg = parts.length
+        ? `✅ "${name}" — ${parts.join(', ')}`
+        : `✅ "${name}" — sin problemas encontrados`
       showToast(msg)
       loadPlaylists()
       loadBlocked()

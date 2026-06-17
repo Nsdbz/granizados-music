@@ -161,6 +161,68 @@ app.get('/search', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Error buscando en YouTube' }) }
 })
 
+// ─── HELPER: DETECTAR VIDEOS DE BAJA CALIDAD (solo audio / imagen estática) ──
+
+const LOW_QUALITY_KEYWORDS = [
+  'audio', 'lyrics', 'lyric', 'letra', 'letras',
+  'lyric video', 'audio oficial', 'audio video',
+  'con letra', 'with lyrics', 'visualizer',
+  'imagen', 'static', 'only audio', 'solo audio',
+  'official audio', 'audio only'
+]
+
+function isLowQualityTitle(title) {
+  const lower = title.toLowerCase()
+  return LOW_QUALITY_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+// Dado el título de una canción, busca en YouTube el mejor video oficial disponible
+// que no sea de baja calidad y que sea embeddable.
+async function findOfficialVideo(originalTitle, originalVideoId) {
+  try {
+    const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+      params: {
+        part: 'snippet',
+        q: originalTitle,
+        type: 'video',
+        videoCategoryId: '10', // categoría Música
+        maxResults: 10,
+        key: process.env.YOUTUBE_API_KEY
+      }
+    })
+
+    const candidates = (searchRes.data.items || []).filter(item => {
+      const vid = item.id.videoId
+      if (vid === originalVideoId) return false
+      return !isLowQualityTitle(item.snippet.title)
+    })
+
+    // Verificar embeddability en lote
+    if (!candidates.length) return null
+    const ids = candidates.map(c => c.id.videoId).join(',')
+    const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
+    })
+    const embeddableIds = new Set(
+      statusRes.data.items
+        .filter(v => v.status.embeddable === true)
+        .map(v => v.id)
+    )
+
+    const winner = candidates.find(c => embeddableIds.has(c.id.videoId))
+    if (!winner) return null
+
+    return {
+      videoId: winner.id.videoId,
+      title: winner.snippet.title,
+      thumbnail: winner.snippet.thumbnails.medium?.url || winner.snippet.thumbnails.default?.url
+    }
+  } catch (e) {
+    console.log(`findOfficialVideo error para "${originalTitle}":`, e.message)
+    return null
+  }
+}
+
 // ─── HELPER: VERIFICAR EMBEDDING ─────────────────────────────────────────────
 
 async function canEmbed(videoId) {
@@ -198,6 +260,7 @@ async function fetchYoutubePlaylist(playlistId) {
     pageToken = response.data.nextPageToken || null
   } while (pageToken)
 
+  // ── Paso 1: filtrar embeddables en lote ──────────────────────────────────
   const embeddable = []
   for (let i = 0; i < songs.length; i += 50) {
     const batch = songs.slice(i, i + 50)
@@ -220,8 +283,36 @@ async function fetchYoutubePlaylist(playlistId) {
     }
   }
 
-  console.log(`Playlist: ${songs.length} videos totales, ${embeddable.length} embeddables`)
-  return embeddable
+  console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables`)
+
+  // ── Paso 2: reemplazar videos de baja calidad (audio/lyrics/imagen) ──────
+  const final = []
+  let replaced = 0
+  let kept = 0
+
+  for (const song of embeddable) {
+    if (!isLowQualityTitle(song.title)) {
+      final.push(song)
+      kept++
+      continue
+    }
+
+    console.log(`🔍 Baja calidad detectada: "${song.title}" — buscando reemplazo`)
+    const official = await findOfficialVideo(song.title, song.videoId)
+    if (official) {
+      final.push(official)
+      replaced++
+      console.log(`✅ Reemplazado por: "${official.title}"`)
+    } else {
+      // Si no se encontró reemplazo, conservar el original
+      final.push(song)
+      kept++
+      console.log(`⚠️  Sin reemplazo, conservando: "${song.title}"`)
+    }
+  }
+
+  console.log(`Resultado: ${kept} originales, ${replaced} reemplazados, ${final.length} total`)
+  return final
 }
 
 // ─── ADMIN: CONFIG ────────────────────────────────────────────────────────────
@@ -391,9 +482,24 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
 
     let fixed = 0
     let removed = 0
+    let qualityFixed = 0
     const repairedSongs = []
 
     for (const song of songs) {
+      // ── Primero: reemplazar si es de baja calidad (audio/lyrics/imagen) ──
+      if (isLowQualityTitle(song.title)) {
+        console.log(`🔍 Baja calidad: "${song.title}" — buscando reemplazo`)
+        const official = await findOfficialVideo(song.title, song.videoId)
+        if (official) {
+          repairedSongs.push(official)
+          qualityFixed++
+          console.log(`✅ Reemplazado por: "${official.title}"`)
+          continue
+        }
+        console.log(`⚠️  Sin reemplazo de calidad, verificando embedding...`)
+      }
+
+      // ── Luego: verificar embedding ────────────────────────────────────────
       const embeddable = await canEmbed(song.videoId)
       if (embeddable) {
         repairedSongs.push(song)
@@ -445,8 +551,8 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
     await savePlaylists(playlists)
     await savePlaylistSongs(req.params.id, repairedSongs)
 
-    console.log(`Reparación completa: ${fixed} reemplazadas, ${removed} eliminadas`)
-    res.json({ ok: true, fixed, removed, total: repairedSongs.length })
+    console.log(`Reparación completa: ${qualityFixed} calidad, ${fixed} bloqueadas reemplazadas, ${removed} eliminadas`)
+    res.json({ ok: true, fixed, qualityFixed, removed, total: repairedSongs.length })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
