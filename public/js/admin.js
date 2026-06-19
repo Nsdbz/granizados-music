@@ -262,6 +262,8 @@ document.addEventListener('click', e => {
   if (e.target === addModal) closeAddModal()
   const mergeModal = document.getElementById('mergeModal')
   if (e.target === mergeModal) closeMergeModal()
+  const checkModal = document.getElementById('checkModal')
+  if (e.target === checkModal) closeCheckModal()
 })
 
 // ─── PLAYLIST DE FONDO ────────────────────────────────────────────────────────
@@ -354,6 +356,7 @@ function renderPlaylists(playlists) {
           <button class="btn-sm ${isActive ? 'btn-toggle-on' : 'btn-toggle-off'}" onclick="togglePlaylist('${pl.id}','${esc(pl.name)}')">${isActive ? '● ON' : '○ OFF'}</button>
           ${!pl.merged ? `<button class="btn-sm btn-ghost" onclick="reloadPlaylist('${pl.id}','${esc(pl.name)}')">↺</button>` : ''}
           <button class="btn-sm btn-ghost" onclick="openCoverModal('${pl.id}','${esc(pl.name)}')">🖼</button>
+          <button class="btn-sm btn-ghost" title="Verificar videos bloqueados" onclick="checkPlaylist('${pl.id}','${esc(pl.name)}')">🔍</button>
           <button class="btn-sm btn-danger" onclick="deletePlaylist('${pl.id}','${esc(pl.name)}')">✕</button>
         </div>
       </div>
@@ -520,6 +523,147 @@ async function loadReports() {
   } catch (e) {
     el.innerHTML = '<p class="empty-msg">Error cargando reportes</p>'
   }
+}
+
+// ─── VERIFICAR VIDEOS BLOQUEADOS ──────────────────────────────────────────────
+
+async function checkPlaylist(id, name) {
+  // Abrir modal con estado de carga
+  const modal = document.getElementById('checkModal')
+  const sub   = document.getElementById('checkModalSub')
+  const body  = document.getElementById('checkModalBody')
+
+  sub.textContent  = `Verificando "${name}"...`
+  body.innerHTML   = `
+    <div style="text-align:center;padding:24px 0">
+      <div style="font-size:2rem;margin-bottom:10px">⏳</div>
+      <div class="loading-msg">Revisando videos uno a uno…<br>
+        <span style="font-size:.72rem;color:var(--muted)">Puede tardar unos segundos según el tamaño de la playlist</span>
+      </div>
+    </div>`
+  modal.classList.add('open')
+
+  try {
+    const res  = await fetch(`/admin/playlists/${id}/check`)
+    const data = await res.json()
+
+    if (!res.ok) {
+      sub.textContent = `Error: ${data.error}`
+      body.innerHTML  = ''
+      return
+    }
+
+    const { blocked, total, playlistName } = data
+
+    if (!blocked.length) {
+      sub.textContent = `${playlistName} — ${total} canciones`
+      body.innerHTML  = `
+        <div style="text-align:center;padding:20px 0">
+          <div style="font-size:2.5rem;margin-bottom:8px">✅</div>
+          <div style="font-size:.9rem;font-weight:700;color:var(--green)">¡Todo bien! Ningún video bloqueado</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">${total} videos verificados</div>
+        </div>`
+      return
+    }
+
+    sub.textContent = `${playlistName} — ${blocked.length} de ${total} bloqueados`
+    body.innerHTML  = `
+      <div style="margin-bottom:12px;padding:10px 12px;background:rgba(255,45,155,0.08);border:1px solid rgba(255,45,155,0.2);border-radius:10px;font-size:.78rem;font-weight:700;color:var(--pink)">
+        ⚠️ ${blocked.length} video${blocked.length !== 1 ? 's' : ''} no se puede${blocked.length !== 1 ? 'n' : ''} embeber en la pantalla. Puedes reemplazarlos desde aquí usando la URL de YouTube.
+      </div>
+      <div id="blockedSongsList">
+        ${blocked.map(v => `
+          <div id="blocked-${v.videoId}" style="display:flex;align-items:center;gap:10px;background:var(--card2);border-radius:10px;padding:10px;margin-bottom:8px;border:1px solid rgba(255,45,155,0.15)">
+            ${v.thumbnail
+              ? `<img src="${v.thumbnail}" style="width:60px;height:44px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)">`
+              : `<div style="width:60px;height:44px;background:var(--card);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">🎵</div>`
+            }
+            <div style="flex:1;min-width:0">
+              <div style="font-size:.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--pink)">${v.title}</div>
+              <div style="font-size:.68rem;color:var(--muted);margin-top:2px">ID: ${v.videoId}</div>
+              <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
+                <input type="text"
+                  id="replace-input-${v.videoId}"
+                  placeholder="URL de YouTube con reemplazo..."
+                  style="flex:1;min-width:0;background:var(--black);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:5px 8px;font-size:.72rem;font-family:'Nunito',sans-serif;outline:none"
+                />
+                <button class="btn-sm btn-add"
+                  style="padding:5px 10px;flex-shrink:0"
+                  onclick="replaceBlockedSong('${id}','${v.videoId}')">
+                  Reemplazar
+                </button>
+                <button class="btn-sm btn-danger"
+                  style="padding:5px 10px;flex-shrink:0"
+                  onclick="removeBlockedSong('${id}','${v.videoId}','${esc(v.title)}')">
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>`
+  } catch (e) {
+    sub.textContent = 'Error de conexión'
+    body.innerHTML  = ''
+  }
+}
+
+async function replaceBlockedSong(playlistId, oldVideoId) {
+  const input   = document.getElementById(`replace-input-${oldVideoId}`)
+  const newUrl  = input?.value?.trim()
+  if (!newUrl) { showToast('Pega la URL del video de reemplazo', true); return }
+
+  const newVideoId = extractVideoId(newUrl)
+  if (!newVideoId) { showToast('URL de YouTube no válida', true); return }
+
+  // Obtener título y thumbnail del nuevo video (gratis con oEmbed)
+  try {
+    const infoRes  = await fetch(`/admin/song-info?videoId=${newVideoId}`)
+    const infoData = await infoRes.json()
+    if (!infoRes.ok || infoData.error) { showToast(infoData.error || 'No se pudo obtener info del video', true); return }
+
+    // Eliminar el video bloqueado de la playlist
+    const delRes = await fetch(`/admin/playlists/${playlistId}/songs/${oldVideoId}`, { method: 'DELETE' })
+    if (!(await delRes.json()).ok) { showToast('Error eliminando el video bloqueado', true); return }
+
+    // Agregar el nuevo video a la playlist
+    const addRes = await fetch(`/admin/playlists/${playlistId}/songs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: newVideoId, title: infoData.title, thumbnail: infoData.thumbnail })
+    })
+    const addData = await addRes.json()
+    if (addData.ok) {
+      showToast(`✅ Reemplazado por: "${infoData.title}"`)
+      document.getElementById(`blocked-${oldVideoId}`)?.remove()
+      loadPlaylists()
+    } else {
+      showToast(addData.error || 'Error agregando el reemplazo', true)
+    }
+  } catch (e) {
+    showToast('Error de conexión', true)
+  }
+}
+
+async function removeBlockedSong(playlistId, videoId, title) {
+  if (!confirm(`¿Eliminar "${title}" de la playlist?`)) return
+  try {
+    const res  = await fetch(`/admin/playlists/${playlistId}/songs/${videoId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`"${title}" eliminada de la playlist`)
+      document.getElementById(`blocked-${videoId}`)?.remove()
+      loadPlaylists()
+    } else {
+      showToast(data.error || 'Error eliminando', true)
+    }
+  } catch (e) {
+    showToast('Error de conexión', true)
+  }
+}
+
+function closeCheckModal() {
+  document.getElementById('checkModal').classList.remove('open')
 }
 
 // ─── PORTADA DE PLAYLIST ──────────────────────────────────────────────────────

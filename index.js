@@ -19,32 +19,56 @@ const redis = new Redis({
 async function getPlaylists() {
   try { const saved = await redis.get('playlists'); return saved || [] } catch (e) { return [] }
 }
+
 async function savePlaylists(playlists) {
   try { await redis.set('playlists', playlists) } catch (e) {}
 }
+
 async function getPlaylistSongs(playlistId) {
   try { const saved = await redis.get(`playlist:${playlistId}:songs`); return saved || [] } catch (e) { return [] }
 }
+
 async function savePlaylistSongs(playlistId, songs) {
   try { await redis.set(`playlist:${playlistId}:songs`, songs) } catch (e) {}
 }
+
 async function getQueue() {
   try { const saved = await redis.get('queue'); return saved || [] } catch (e) { return [] }
 }
+
 async function saveQueue(queue) {
   try { await redis.set('queue', queue) } catch (e) {}
 }
+
 async function getPending() {
   try { const saved = await redis.get('pending'); return saved || [] } catch (e) { return [] }
 }
+
 async function savePending(pending) {
   try { await redis.set('pending', pending) } catch (e) {}
 }
+
 async function getRequestLog() {
   try { const saved = await redis.get('request_log'); return saved || {} } catch (e) { return {} }
 }
+
 async function saveRequestLog(log) {
   try { await redis.set('request_log', log) } catch (e) {}
+}
+
+// ─── LOG DE VIDEOS BLOQUEADOS ─────────────────────────────────────────────────
+
+async function getBlockedLog() {
+  try { return await redis.get('blocked_log') || [] } catch (e) { return [] }
+}
+
+async function logBlockedVideo(videoId, title, thumbnail) {
+  try {
+    const log = await getBlockedLog()
+    if (log.find(v => v.videoId === videoId)) return
+    log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
+    await redis.set('blocked_log', log.slice(0, 100))
+  } catch (e) {}
 }
 
 // ─── CONFIG (límite entre peticiones) ────────────────────────────────────────
@@ -52,6 +76,7 @@ async function saveRequestLog(log) {
 async function getConfig() {
   try { const saved = await redis.get('app_config'); return saved || { requestLimitMinutes: 10 } } catch (e) { return { requestLimitMinutes: 10 } }
 }
+
 async function saveConfig(config) {
   try { await redis.set('app_config', config) } catch (e) {}
 }
@@ -93,7 +118,7 @@ async function getAvailableDates() {
   return dateStrs.filter((_, i) => results[i] && Object.keys(results[i]).length > 0)
 }
 
-// ─── PLAYLIST DE FONDO ────────────────────────────────────────────────────────
+// ─── AUTO PLAYLIST (playlist de fondo o aleatoria entre activas) ─────────────
 
 async function getBackgroundPlaylistId() {
   try { return await redis.get('background_playlist_id') || null } catch (e) { return null }
@@ -104,10 +129,18 @@ async function getRandomSongFromPlaylists() {
     const playlists = await getPlaylists()
     const active = playlists.filter(p => p.active !== false)
     if (!active.length) return null
+
+    // Si hay playlist de fondo configurada, usar solo esa
     const bgId = await getBackgroundPlaylistId()
     let playlist = null
-    if (bgId) playlist = active.find(p => p.id === bgId)
-    if (!playlist) playlist = active[Math.floor(Math.random() * active.length)]
+    if (bgId) {
+      playlist = active.find(p => p.id === bgId)
+    }
+    // Si no hay configurada o no está activa, elegir aleatoriamente
+    if (!playlist) {
+      playlist = active[Math.floor(Math.random() * active.length)]
+    }
+
     const songs = await getPlaylistSongs(playlist.id)
     if (!songs.length) return null
     const song = songs[Math.floor(Math.random() * songs.length)]
@@ -120,6 +153,8 @@ async function getRandomSongFromPlaylists() {
 function getIdentifier(req, clientId) {
   return clientId || req.headers['x-forwarded-for'] || req.socket.remoteAddress
 }
+
+// ─── ADMIN: autenticación desactivada ─────────────────────────────────────────
 
 function adminAuth(req, res, next) { next() }
 
@@ -141,11 +176,97 @@ app.get('/search', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Error buscando en YouTube' }) }
 })
 
-// ─── YOUTUBE: CARGAR PLAYLIST ─────────────────────────────────────────────────
+// ─── HELPER: DETECTAR VIDEOS DE BAJA CALIDAD (solo audio / imagen estática) ──
+
+const LOW_QUALITY_KEYWORDS = [
+  'audio', 'lyrics', 'lyric', 'letra', 'letras',
+  'lyric video', 'audio oficial', 'audio video',
+  'con letra', 'with lyrics', 'visualizer',
+  'imagen', 'static', 'only audio', 'solo audio',
+  'official audio', 'audio only'
+]
+
+function isLowQualityTitle(title) {
+  const lower = title.toLowerCase()
+  return LOW_QUALITY_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+// Limpia el título quitando paréntesis y corchetes con su contenido
+function cleanTitle(title) {
+  return title
+    .replace(/\(.*?\)/g, "")  // quita (Audio Oficial), (Lyric Video), etc.
+    .replace(/\[.*?\]/g, "")  // quita [Official Audio], [4K], etc.
+    .trim()
+}
+
+// Dado el título de una canción, busca en YouTube el mejor video oficial disponible
+// que no sea de baja calidad y que sea embeddable.
+async function findOfficialVideo(originalTitle, originalVideoId) {
+  try {
+    const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+      params: {
+        part: 'snippet',
+        q: `${cleanTitle(originalTitle)} video`,
+        type: 'video',
+        videoCategoryId: '10', // categoría Música
+        maxResults: 10,
+        key: process.env.YOUTUBE_API_KEY
+      }
+    })
+
+    const allItems = (searchRes.data.items || []).filter(item => item.id.videoId !== originalVideoId)
+    if (!allItems.length) return null
+
+    // Verificar embeddability en lote para todos los candidatos
+    const ids = allItems.map(c => c.id.videoId).join(',')
+    const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
+    })
+    const embeddableIds = new Set(
+      statusRes.data.items
+        .filter(v => v.status.embeddable === true)
+        .map(v => v.id)
+    )
+
+    const embeddable = allItems.filter(c => embeddableIds.has(c.id.videoId))
+    if (!embeddable.length) return null
+
+    // Preferir videos sin keywords de baja calidad, pero si no hay, usar el primero embeddable
+    const winner = embeddable.find(c => !isLowQualityTitle(c.snippet.title)) || embeddable[0]
+
+    return {
+      videoId: winner.id.videoId,
+      title: winner.snippet.title,
+      thumbnail: winner.snippet.thumbnails.medium?.url || winner.snippet.thumbnails.default?.url
+    }
+  } catch (e) {
+    console.log(`findOfficialVideo error para "${originalTitle}":`, e.message)
+    return null
+  }
+}
+
+// ─── HELPER: VERIFICAR EMBEDDING ─────────────────────────────────────────────
+
+async function canEmbed(videoId) {
+  try {
+    const res = await axios.get('https://www.youtube.com/oembed', {
+      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' },
+      timeout: 8000,
+      validateStatus: s => s < 500
+    })
+    // 200 = embeddable, 401/403 = bloqueado, 404 = no existe
+    return res.status === 200
+  } catch (e) {
+    // Si hay error de red o timeout, conservar la canción (no eliminarla por error de conexión)
+    console.log(`canEmbed error para ${videoId}:`, e.code || e.message)
+    return true
+  }
+}
 
 async function fetchYoutubePlaylist(playlistId) {
   let songs = []
   let pageToken = null
+
   do {
     const params = { part: 'snippet', playlistId, maxResults: 50, key: process.env.YOUTUBE_API_KEY }
     if (pageToken) params.pageToken = pageToken
@@ -161,7 +282,7 @@ async function fetchYoutubePlaylist(playlistId) {
     pageToken = response.data.nextPageToken || null
   } while (pageToken)
 
-  // Filtrar solo embeddables en lotes de 50
+  // ── Paso 1: filtrar embeddables en lote ──────────────────────────────────
   const embeddable = []
   for (let i = 0; i < songs.length; i += 50) {
     const batch = songs.slice(i, i + 50)
@@ -171,9 +292,13 @@ async function fetchYoutubePlaylist(playlistId) {
         params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
       })
       const embeddableIds = new Set(
-        statusRes.data.items.filter(v => v.status.embeddable === true).map(v => v.id)
+        statusRes.data.items
+          .filter(v => v.status.embeddable === true)
+          .map(v => v.id)
       )
-      batch.forEach(song => { if (embeddableIds.has(song.videoId)) embeddable.push(song) })
+      batch.forEach(song => {
+        if (embeddableIds.has(song.videoId)) embeddable.push(song)
+      })
     } catch (e) {
       console.log('Error verificando embedding del lote:', e.message)
       embeddable.push(...batch)
@@ -181,7 +306,35 @@ async function fetchYoutubePlaylist(playlistId) {
   }
 
   console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables`)
-  return embeddable
+
+  // ── Paso 2: reemplazar videos de baja calidad (audio/lyrics/imagen) ──────
+  const final = []
+  let replaced = 0
+  let kept = 0
+
+  for (const song of embeddable) {
+    if (!isLowQualityTitle(song.title)) {
+      final.push(song)
+      kept++
+      continue
+    }
+
+    console.log(`🔍 Baja calidad detectada: "${song.title}" — buscando reemplazo`)
+    const official = await findOfficialVideo(song.title, song.videoId)
+    if (official) {
+      final.push(official)
+      replaced++
+      console.log(`✅ Reemplazado por: "${official.title}"`)
+    } else {
+      // Si no se encontró reemplazo, conservar el original
+      final.push(song)
+      kept++
+      console.log(`⚠️  Sin reemplazo, conservando: "${song.title}"`)
+    }
+  }
+
+  console.log(`Resultado: ${kept} originales, ${replaced} reemplazados, ${final.length} total`)
+  return final
 }
 
 // ─── ADMIN: CONFIG ────────────────────────────────────────────────────────────
@@ -222,14 +375,14 @@ app.post('/admin/request-limit', adminAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
-app.get('/admin/reports', adminAuth, async (req, res) => {
+app.get("/admin/reports", adminAuth, async (req, res) => {
   try {
     const dates = await getAvailableDates()
     const statsAll = await Promise.all(dates.map(date => getDailyStats(date)))
     const reports = dates.map((date, i) => {
       const videos = Object.values(statsAll[i])
       const totalRequests = videos.reduce((acc, v) => acc + v.count, 0)
-      const [y, m, d] = date.split('-')
+      const [y, m, d] = date.split("-")
       return { date: `${d}/${m}/${y}`, totalRequests }
     })
     res.json(reports)
@@ -251,7 +404,7 @@ app.post('/admin/playlists', adminAuth, async (req, res) => {
   if (match) playlistId = match[1]
   try {
     const songs = await fetchYoutubePlaylist(playlistId)
-    if (!songs.length) return res.status(400).json({ error: 'No se encontraron videos reproducibles en esa playlist' })
+    if (!songs.length) return res.status(400).json({ error: 'No se encontraron videos reproducibles en esa playlist (todos tienen restricción de embedding)' })
     const playlists = await getPlaylists()
     const exists = playlists.find(p => p.youtubeId === playlistId)
     if (exists) return res.status(400).json({ error: 'Esa playlist ya está agregada' })
@@ -259,7 +412,7 @@ app.post('/admin/playlists', adminAuth, async (req, res) => {
     playlists.push({ id, youtubeId: playlistId, name, total: songs.length, active: true, createdAt: Date.now() })
     await savePlaylists(playlists)
     await savePlaylistSongs(id, songs)
-    res.json({ ok: true, name, total: songs.length })
+    res.json({ ok: true, name, total: songs.length, filtered: true })
   } catch (error) { res.status(500).json({ error: 'No se pudo cargar la playlist. Verifica que sea pública.' }) }
 })
 
@@ -349,6 +502,142 @@ app.post('/admin/playlists/:id/songs', adminAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
+// Eliminar una canción individual de una playlist (por videoId)
+app.delete('/admin/playlists/:id/songs/:videoId', adminAuth, async (req, res) => {
+  try {
+    const playlists = await getPlaylists()
+    const playlist  = playlists.find(p => p.id === req.params.id)
+    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+    const songs = await getPlaylistSongs(req.params.id)
+    const updated = songs.filter(s => s.videoId !== req.params.videoId)
+    if (updated.length === songs.length) return res.status(404).json({ error: 'Canción no encontrada en la playlist' })
+    playlist.total = updated.length
+    await savePlaylists(playlists)
+    await savePlaylistSongs(req.params.id, updated)
+    res.json({ ok: true, total: updated.length })
+  } catch (error) { res.status(500).json({ error: error.message }) }
+})
+
+// ─── VERIFICAR VIDEOS BLOQUEADOS EN UNA PLAYLIST ─────────────────────────────
+// Escanea cada canción con oEmbed (gratis, sin cuota de API).
+// Devuelve la lista de videos que no se pueden embeber.
+
+app.get('/admin/playlists/:id/check', adminAuth, async (req, res) => {
+  try {
+    const playlists = await getPlaylists()
+    const playlist = playlists.find(p => p.id === req.params.id)
+    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+
+    const songs = await getPlaylistSongs(req.params.id)
+    if (!songs.length) return res.json({ ok: true, blocked: [], total: 0 })
+
+    const blocked = []
+
+    // canEmbed usa oEmbed → gratuito, sin cuota de YouTube API
+    for (const song of songs) {
+      const embeddable = await canEmbed(song.videoId)
+      if (!embeddable) {
+        blocked.push({ videoId: song.videoId, title: song.title, thumbnail: song.thumbnail || null })
+      }
+    }
+
+    res.json({ ok: true, blocked, total: songs.length, playlistName: playlist.name })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ─── REPARAR PLAYLIST ─────────────────────────────────────────────────────────
+
+app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
+  try {
+    const playlists = await getPlaylists()
+    const playlist = playlists.find(p => p.id === req.params.id)
+    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+
+    const songs = await getPlaylistSongs(req.params.id)
+    if (!songs.length) return res.json({ ok: true, fixed: 0, removed: 0, total: 0 })
+
+    console.log(`Reparando playlist "${playlist.name}" — ${songs.length} canciones`)
+
+    let fixed = 0
+    let removed = 0
+    let qualityFixed = 0
+    const repairedSongs = []
+
+    for (const song of songs) {
+      // ── Primero: reemplazar si es de baja calidad (audio/lyrics/imagen) ──
+      if (isLowQualityTitle(song.title)) {
+        console.log(`🔍 Baja calidad: "${song.title}" — buscando reemplazo`)
+        const official = await findOfficialVideo(song.title, song.videoId)
+        if (official) {
+          repairedSongs.push(official)
+          qualityFixed++
+          console.log(`✅ Reemplazado por: "${official.title}"`)
+          continue
+        }
+        console.log(`⚠️  Sin reemplazo de calidad, verificando embedding...`)
+      }
+
+      // ── Luego: verificar embedding ────────────────────────────────────────
+      const embeddable = await canEmbed(song.videoId)
+      if (embeddable) {
+        repairedSongs.push(song)
+        continue
+      }
+
+      console.log(`Bloqueado: "${song.title}" (${song.videoId})`)
+      await logBlockedVideo(song.videoId, song.title, song.thumbnail)
+
+      try {
+        const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+          params: {
+            part: 'snippet',
+            q: `${song.title} video`,
+            type: 'video',
+            maxResults: 10,
+            key: process.env.YOUTUBE_API_KEY
+          }
+        })
+        const items = searchRes.data.items || []
+        let found = false
+        for (const item of items) {
+          const altId = item.id.videoId
+          if (altId === song.videoId) continue
+          if (await canEmbed(altId)) {
+            repairedSongs.push({
+              videoId: altId,
+              title: item.snippet.title,
+              thumbnail: item.snippet.thumbnails.medium?.url || song.thumbnail
+            })
+            console.log(`✅ Reemplazada por: "${item.snippet.title}"`)
+            fixed++
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          console.log(`❌ Sin alternativa, eliminando: "${song.title}"`)
+          removed++
+        }
+      } catch (e) {
+        console.log(`Error buscando alternativa para "${song.title}":`, e.message)
+        // Si falla la búsqueda, conservar la canción original
+        repairedSongs.push(song)
+      }
+    }
+
+    playlist.total = repairedSongs.length
+    await savePlaylists(playlists)
+    await savePlaylistSongs(req.params.id, repairedSongs)
+
+    console.log(`Reparación completa: ${qualityFixed} calidad, ${fixed} bloqueadas reemplazadas, ${removed} eliminadas`)
+    res.json({ ok: true, fixed, qualityFixed, removed, total: repairedSongs.length })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 app.post('/admin/add-to-queue', adminAuth, async (req, res) => {
   const { videoId, title, thumbnail } = req.body
   if (!videoId || !title) return res.status(400).json({ error: 'Datos incompletos' })
@@ -409,7 +698,7 @@ app.delete('/admin/queue/:id', adminAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
-// ─── ADMIN: ESTADÍSTICAS ──────────────────────────────────────────────────────
+// ─── ADMIN: ESTADÍSTICAS DIARIAS ─────────────────────────────────────────────
 
 app.get('/admin/stats', adminAuth, async (req, res) => {
   try {
@@ -431,43 +720,43 @@ app.get('/admin/clear-queue', async (req, res) => {
   res.json({ ok: true })
 })
 
+app.get('/admin/blocked', adminAuth, async (req, res) => {
+  try { res.json(await getBlockedLog()) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/admin/blocked/:videoId', adminAuth, async (req, res) => {
+  try {
+    const log = await getBlockedLog()
+    await redis.set('blocked_log', log.filter(v => v.videoId !== req.params.videoId))
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/admin/blocked', adminAuth, async (req, res) => {
+  try { await redis.set('blocked_log', []); res.json({ ok: true }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── ADMIN: PLAYLIST DE FONDO ────────────────────────────────────────────────
 
 app.get('/admin/background-playlist', adminAuth, async (req, res) => {
-  try { res.json({ id: await getBackgroundPlaylistId() }) }
-  catch (e) { res.status(500).json({ error: e.message }) }
+  try {
+    const id = await getBackgroundPlaylistId()
+    res.json({ id })
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 app.post('/admin/background-playlist', adminAuth, async (req, res) => {
   try {
     const { id } = req.body
-    if (id) { await redis.set('background_playlist_id', id) }
-    else { await redis.del('background_playlist_id') }
+    if (id) {
+      await redis.set('background_playlist_id', id)
+    } else {
+      await redis.del('background_playlist_id')
+    }
     res.json({ ok: true, id: id || null })
   } catch (e) { res.status(500).json({ error: e.message }) }
-})
-
-// ─── ADMIN: INFO DE CANCIÓN POR URL (usa oEmbed, sin gastar cuota) ────────────
-
-app.get('/admin/song-info', adminAuth, async (req, res) => {
-  const { videoId } = req.query
-  if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
-    return res.status(400).json({ error: 'videoId inválido' })
-  }
-  try {
-    const oembedRes = await axios.get('https://www.youtube.com/oembed', {
-      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' },
-      timeout: 8000,
-      validateStatus: s => s < 500
-    })
-    if (oembedRes.status !== 200) {
-      return res.status(404).json({ error: 'Video no encontrado o no embebible' })
-    }
-    const { title, thumbnail_url } = oembedRes.data
-    res.json({ videoId, title, thumbnail: thumbnail_url })
-  } catch (e) {
-    res.status(500).json({ error: 'No se pudo obtener info del video' })
-  }
 })
 
 // ─── CLIENTE: VER PLAYLISTS Y CANCIONES ───────────────────────────────────────
@@ -476,7 +765,8 @@ app.get('/playlists', async (req, res) => {
   try {
     const all = await getPlaylists()
     res.json(all.filter(p => p.active !== false))
-  } catch (error) { res.status(500).json({ error: error.message }) }
+  }
+  catch (error) { res.status(500).json({ error: error.message }) }
 })
 
 app.get('/playlists/:id/songs', async (req, res) => {
@@ -509,17 +799,35 @@ app.post('/request', async (req, res) => {
   }
 
   try {
+    // Buscar el video oficial en YouTube para evitar imágenes estáticas
+    // Si falla o se agota la cuota, se usa el video original como respaldo
+    let finalVideoId = videoId
+    let finalTitle = title
+    let finalThumbnail = thumbnail || null
+
+    try {
+      const official = await findOfficialVideo(title, videoId)
+      if (official) {
+        finalVideoId = official.videoId
+        finalTitle = official.title
+        finalThumbnail = official.thumbnail
+        console.log(`🎬 Video oficial encontrado: "${finalTitle}"`)
+      }
+    } catch (e) {
+      console.log('No se pudo buscar video oficial, usando original:', e.message)
+    }
+
     const queue = await getQueue()
     queue.push({
       id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      videoId,
-      title,
-      thumbnail: thumbnail || null,
+      videoId: finalVideoId,
+      title: finalTitle,
+      thumbnail: finalThumbnail,
       requestedBy: identifier,
       approvedAt: Date.now()
     })
     await saveQueue(queue)
-    await incrementDailyStat({ videoId, title, thumbnail })
+    await incrementDailyStat({ videoId: finalVideoId, title: finalTitle, thumbnail: finalThumbnail })
 
     if (LIMIT_MS > 0) {
       log[identifier] = now
