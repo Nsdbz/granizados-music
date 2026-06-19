@@ -62,11 +62,11 @@ async function getBlockedLog() {
   try { return await redis.get('blocked_log') || [] } catch (e) { return [] }
 }
 
-async function logBlockedVideo(videoId, title, thumbnail, errorCode) {
+async function logBlockedVideo(videoId, title, thumbnail) {
   try {
     const log = await getBlockedLog()
     if (log.find(v => v.videoId === videoId)) return
-    log.unshift({ videoId, title, thumbnail: thumbnail || null, errorCode: errorCode || null, blockedAt: Date.now() })
+    log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
     await redis.set('blocked_log', log.slice(0, 100))
   } catch (e) {}
 }
@@ -176,75 +176,6 @@ app.get('/search', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Error buscando en YouTube' }) }
 })
 
-// ─── HELPER: DETECTAR VIDEOS DE BAJA CALIDAD (solo audio / imagen estática) ──
-
-const LOW_QUALITY_KEYWORDS = [
-  'audio', 'lyrics', 'lyric', 'letra', 'letras',
-  'lyric video', 'audio oficial', 'audio video',
-  'con letra', 'with lyrics', 'visualizer',
-  'imagen', 'static', 'only audio', 'solo audio',
-  'official audio', 'audio only'
-]
-
-function isLowQualityTitle(title) {
-  const lower = title.toLowerCase()
-  return LOW_QUALITY_KEYWORDS.some(kw => lower.includes(kw))
-}
-
-// Limpia el título quitando paréntesis y corchetes con su contenido
-function cleanTitle(title) {
-  return title
-    .replace(/\(.*?\)/g, "")  // quita (Audio Oficial), (Lyric Video), etc.
-    .replace(/\[.*?\]/g, "")  // quita [Official Audio], [4K], etc.
-    .trim()
-}
-
-// Dado el título de una canción, busca en YouTube el mejor video oficial disponible
-// que no sea de baja calidad y que sea embeddable.
-async function findOfficialVideo(originalTitle, originalVideoId) {
-  try {
-    const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-      params: {
-        part: 'snippet',
-        q: `${cleanTitle(originalTitle)} video`,
-        type: 'video',
-        videoCategoryId: '10', // categoría Música
-        maxResults: 10,
-        key: process.env.YOUTUBE_API_KEY
-      }
-    })
-
-    const allItems = (searchRes.data.items || []).filter(item => item.id.videoId !== originalVideoId)
-    if (!allItems.length) return null
-
-    // Verificar embeddability en lote para todos los candidatos
-    const ids = allItems.map(c => c.id.videoId).join(',')
-    const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
-      params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
-    })
-    const embeddableIds = new Set(
-      statusRes.data.items
-        .filter(v => v.status.embeddable === true)
-        .map(v => v.id)
-    )
-
-    const embeddable = allItems.filter(c => embeddableIds.has(c.id.videoId))
-    if (!embeddable.length) return null
-
-    // Preferir videos sin keywords de baja calidad, pero si no hay, usar el primero embeddable
-    const winner = embeddable.find(c => !isLowQualityTitle(c.snippet.title)) || embeddable[0]
-
-    return {
-      videoId: winner.id.videoId,
-      title: winner.snippet.title,
-      thumbnail: winner.snippet.thumbnails.medium?.url || winner.snippet.thumbnails.default?.url
-    }
-  } catch (e) {
-    console.log(`findOfficialVideo error para "${originalTitle}":`, e.message)
-    return null
-  }
-}
-
 // ─── HELPER: VERIFICAR EMBEDDING ─────────────────────────────────────────────
 
 async function canEmbed(videoId) {
@@ -306,35 +237,7 @@ async function fetchYoutubePlaylist(playlistId) {
   }
 
   console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables`)
-
-  // ── Paso 2: reemplazar videos de baja calidad (audio/lyrics/imagen) ──────
-  const final = []
-  let replaced = 0
-  let kept = 0
-
-  for (const song of embeddable) {
-    if (!isLowQualityTitle(song.title)) {
-      final.push(song)
-      kept++
-      continue
-    }
-
-    console.log(`🔍 Baja calidad detectada: "${song.title}" — buscando reemplazo`)
-    const official = await findOfficialVideo(song.title, song.videoId)
-    if (official) {
-      final.push(official)
-      replaced++
-      console.log(`✅ Reemplazado por: "${official.title}"`)
-    } else {
-      // Si no se encontró reemplazo, conservar el original
-      final.push(song)
-      kept++
-      console.log(`⚠️  Sin reemplazo, conservando: "${song.title}"`)
-    }
-  }
-
-  console.log(`Resultado: ${kept} originales, ${replaced} reemplazados, ${final.length} total`)
-  return final
+  return embeddable
 }
 
 // ─── ADMIN: CONFIG ────────────────────────────────────────────────────────────
@@ -515,70 +418,17 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
 
     console.log(`Reparando playlist "${playlist.name}" — ${songs.length} canciones`)
 
-    let fixed = 0
     let removed = 0
-    let qualityFixed = 0
     const repairedSongs = []
 
     for (const song of songs) {
-      // ── Primero: reemplazar si es de baja calidad (audio/lyrics/imagen) ──
-      if (isLowQualityTitle(song.title)) {
-        console.log(`🔍 Baja calidad: "${song.title}" — buscando reemplazo`)
-        const official = await findOfficialVideo(song.title, song.videoId)
-        if (official) {
-          repairedSongs.push(official)
-          qualityFixed++
-          console.log(`✅ Reemplazado por: "${official.title}"`)
-          continue
-        }
-        console.log(`⚠️  Sin reemplazo de calidad, verificando embedding...`)
-      }
-
-      // ── Luego: verificar embedding ────────────────────────────────────────
       const embeddable = await canEmbed(song.videoId)
       if (embeddable) {
         repairedSongs.push(song)
-        continue
-      }
-
-      console.log(`Bloqueado: "${song.title}" (${song.videoId})`)
-      await logBlockedVideo(song.videoId, song.title, song.thumbnail)
-
-      try {
-        const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-          params: {
-            part: 'snippet',
-            q: `${song.title} video`,
-            type: 'video',
-            maxResults: 10,
-            key: process.env.YOUTUBE_API_KEY
-          }
-        })
-        const items = searchRes.data.items || []
-        let found = false
-        for (const item of items) {
-          const altId = item.id.videoId
-          if (altId === song.videoId) continue
-          if (await canEmbed(altId)) {
-            repairedSongs.push({
-              videoId: altId,
-              title: item.snippet.title,
-              thumbnail: item.snippet.thumbnails.medium?.url || song.thumbnail
-            })
-            console.log(`✅ Reemplazada por: "${item.snippet.title}"`)
-            fixed++
-            found = true
-            break
-          }
-        }
-        if (!found) {
-          console.log(`❌ Sin alternativa, eliminando: "${song.title}"`)
-          removed++
-        }
-      } catch (e) {
-        console.log(`Error buscando alternativa para "${song.title}":`, e.message)
-        // Si falla la búsqueda, conservar la canción original
-        repairedSongs.push(song)
+      } else {
+        console.log(`Bloqueado: "${song.title}" (${song.videoId})`)
+        await logBlockedVideo(song.videoId, song.title, song.thumbnail)
+        removed++
       }
     }
 
@@ -586,8 +436,8 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
     await savePlaylists(playlists)
     await savePlaylistSongs(req.params.id, repairedSongs)
 
-    console.log(`Reparación completa: ${qualityFixed} calidad, ${fixed} bloqueadas reemplazadas, ${removed} eliminadas`)
-    res.json({ ok: true, fixed, qualityFixed, removed, total: repairedSongs.length })
+    console.log(`Reparación completa: ${removed} eliminadas, ${repairedSongs.length} restantes`)
+    res.json({ ok: true, removed, total: repairedSongs.length })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -754,35 +604,17 @@ app.post('/request', async (req, res) => {
   }
 
   try {
-    // Buscar el video oficial en YouTube para evitar imágenes estáticas
-    // Si falla o se agota la cuota, se usa el video original como respaldo
-    let finalVideoId = videoId
-    let finalTitle = title
-    let finalThumbnail = thumbnail || null
-
-    try {
-      const official = await findOfficialVideo(title, videoId)
-      if (official) {
-        finalVideoId = official.videoId
-        finalTitle = official.title
-        finalThumbnail = official.thumbnail
-        console.log(`🎬 Video oficial encontrado: "${finalTitle}"`)
-      }
-    } catch (e) {
-      console.log('No se pudo buscar video oficial, usando original:', e.message)
-    }
-
     const queue = await getQueue()
     queue.push({
       id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      videoId: finalVideoId,
-      title: finalTitle,
-      thumbnail: finalThumbnail,
+      videoId,
+      title,
+      thumbnail: thumbnail || null,
       requestedBy: identifier,
       approvedAt: Date.now()
     })
     await saveQueue(queue)
-    await incrementDailyStat({ videoId: finalVideoId, title: finalTitle, thumbnail: finalThumbnail })
+    await incrementDailyStat({ videoId, title, thumbnail })
 
     if (LIMIT_MS > 0) {
       log[identifier] = now
@@ -797,20 +629,6 @@ app.post('/request', async (req, res) => {
 })
 
 // ─── PANTALLA ─────────────────────────────────────────────────────────────────
-
-// ─── PANTALLA: REPORTAR VIDEO QUE FALLÓ AL REPRODUCIRSE ─────────────────────
-
-app.post('/screen/report-error', async (req, res) => {
-  const { videoId, title, thumbnail, errorCode } = req.body
-  if (!videoId || !title) return res.status(400).json({ ok: false })
-  try {
-    await logBlockedVideo(videoId, title, thumbnail, errorCode)
-    console.log(`⚠️  Video reportado como no disponible en pantalla: "${title}" (código ${errorCode})`)
-    res.json({ ok: true })
-  } catch (e) {
-    res.status(500).json({ ok: false })
-  }
-})
 
 app.get('/screen/next', async (req, res) => {
   try {
