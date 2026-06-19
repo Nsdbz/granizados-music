@@ -102,10 +102,8 @@ function init() {
   loadQueue()
   loadLimit()
   loadReports()
-  loadBlocked()
   loadBgPlaylist()
   setInterval(loadQueue, 10000)
-  setInterval(loadBlocked, 15000)
 }
 
 // ─── LÍMITE ENTRE PETICIONES ──────────────────────────────────────────────────
@@ -265,7 +263,6 @@ document.addEventListener('click', e => {
   const mergeModal = document.getElementById('mergeModal')
   if (e.target === mergeModal) closeMergeModal()
 })
-
 
 // ─── PLAYLIST DE FONDO ────────────────────────────────────────────────────────
 
@@ -525,84 +522,6 @@ async function loadReports() {
   }
 }
 
-// ─── VIDEOS BLOQUEADOS ───────────────────────────────────────────────────────
-
-async function loadBlocked() {
-  try {
-    const res = await fetch('/admin/blocked')
-    const blocked = await res.json()
-    const badge = document.getElementById('blockedBadge')
-    const clearBtn = document.getElementById('clearBlockedBtn')
-    const el = document.getElementById('blockedList')
-
-    if (blocked.length > 0) {
-      badge.textContent = blocked.length
-      badge.style.display = 'inline-flex'
-      clearBtn.style.display = 'inline-flex'
-    } else {
-      badge.style.display = 'none'
-      clearBtn.style.display = 'none'
-      el.innerHTML = '<p class="empty-msg">No hay videos bloqueados registrados 🎉</p>'
-      return
-    }
-
-    el.innerHTML = blocked.map(v => `
-      <div class="request-row" id="blocked-${v.videoId}">
-        ${v.thumbnail
-          ? `<img src="${v.thumbnail}" alt="" style="width:52px;height:38px;border-radius:7px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
-          : '<div class="thumb-ph">🚫</div>'
-        }
-        <div class="req-info">
-          <div class="req-title">${v.title}</div>
-          <div class="req-time" style="display:flex;gap:8px;align-items:center">
-            <span>${timeAgo(v.blockedAt)}</span>
-            <a href="https://www.youtube.com/watch?v=${v.videoId}" target="_blank"
-               style="color:var(--purple2);font-size:.68rem;font-weight:700;text-decoration:none">
-              Ver en YouTube ↗
-            </a>
-          </div>
-        </div>
-        <button class="btn-sm btn-danger" onclick="removeBlocked('${v.videoId}')">✕</button>
-      </div>
-    `).join('')
-  } catch (e) {}
-}
-
-async function removeBlocked(videoId) {
-  try {
-    await fetch(`/admin/blocked/${videoId}`, { method: 'DELETE' })
-    const row = document.getElementById(`blocked-${videoId}`)
-    if (row) { row.style.opacity = '0'; row.style.transition = 'opacity .3s' }
-    setTimeout(loadBlocked, 350)
-  } catch (e) { showToast('Error eliminando', true) }
-}
-
-async function clearBlocked() {
-  if (!confirm('¿Limpiar todo el log de videos bloqueados?')) return
-  try {
-    await fetch('/admin/blocked', { method: 'DELETE' })
-    showToast('Log limpiado')
-    loadBlocked()
-  } catch (e) { showToast('Error', true) }
-}
-
-// ─── UTILIDADES ───────────────────────────────────────────────────────────────
-
-function showToast(msg, isError = false) {
-  const el = document.getElementById('toast')
-  el.textContent = msg
-  el.className = 'toast show' + (isError ? ' error' : '')
-  setTimeout(() => el.classList.remove('show'), 3000)
-}
-
-function esc(str) { return (str || '').replace(/'/g, "\\'") }
-
-function timeAgo(ts) {
-  const m = Math.floor((Date.now() - ts) / 60000)
-  if (m < 1) return 'hace un momento'
-  if (m < 60) return `hace ${m} min`
-  return `hace ${Math.floor(m / 60)} h`
-}
 // ─── PORTADA DE PLAYLIST ──────────────────────────────────────────────────────
 
 let coverPlaylistId = null
@@ -647,4 +566,22 @@ async function saveCover() {
       loadPlaylists()
     } else showToast(data.error, true)
   } catch (e) { showToast('Error de conexión', true) }
+}
+
+// ─── UTILIDADES ───────────────────────────────────────────────────────────────
+
+function showToast(msg, isError = false) {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = 'toast show' + (isError ? ' error' : '')
+  setTimeout(() => el.classList.remove('show'), 3000)
+}
+
+function esc(str) { return (str || '').replace(/'/g, "\\'") }
+
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000)
+  if (m < 1) return 'hace un momento'
+  if (m < 60) return `hace ${m} min`
+  return `hace ${Math.floor(m / 60)} h`
 }
