@@ -62,11 +62,11 @@ async function getBlockedLog() {
   try { return await redis.get('blocked_log') || [] } catch (e) { return [] }
 }
 
-async function logBlockedVideo(videoId, title, thumbnail) {
+async function logBlockedVideo(videoId, title, thumbnail, errorCode) {
   try {
     const log = await getBlockedLog()
     if (log.find(v => v.videoId === videoId)) return
-    log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
+    log.unshift({ videoId, title, thumbnail: thumbnail || null, errorCode: errorCode || null, blockedAt: Date.now() })
     await redis.set('blocked_log', log.slice(0, 100))
   } catch (e) {}
 }
@@ -502,51 +502,6 @@ app.post('/admin/playlists/:id/songs', adminAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
-// Eliminar una canción individual de una playlist (por videoId)
-app.delete('/admin/playlists/:id/songs/:videoId', adminAuth, async (req, res) => {
-  try {
-    const playlists = await getPlaylists()
-    const playlist  = playlists.find(p => p.id === req.params.id)
-    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
-    const songs = await getPlaylistSongs(req.params.id)
-    const updated = songs.filter(s => s.videoId !== req.params.videoId)
-    if (updated.length === songs.length) return res.status(404).json({ error: 'Canción no encontrada en la playlist' })
-    playlist.total = updated.length
-    await savePlaylists(playlists)
-    await savePlaylistSongs(req.params.id, updated)
-    res.json({ ok: true, total: updated.length })
-  } catch (error) { res.status(500).json({ error: error.message }) }
-})
-
-// ─── VERIFICAR VIDEOS BLOQUEADOS EN UNA PLAYLIST ─────────────────────────────
-// Escanea cada canción con oEmbed (gratis, sin cuota de API).
-// Devuelve la lista de videos que no se pueden embeber.
-
-app.get('/admin/playlists/:id/check', adminAuth, async (req, res) => {
-  try {
-    const playlists = await getPlaylists()
-    const playlist = playlists.find(p => p.id === req.params.id)
-    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
-
-    const songs = await getPlaylistSongs(req.params.id)
-    if (!songs.length) return res.json({ ok: true, blocked: [], total: 0 })
-
-    const blocked = []
-
-    // canEmbed usa oEmbed → gratuito, sin cuota de YouTube API
-    for (const song of songs) {
-      const embeddable = await canEmbed(song.videoId)
-      if (!embeddable) {
-        blocked.push({ videoId: song.videoId, title: song.title, thumbnail: song.thumbnail || null })
-      }
-    }
-
-    res.json({ ok: true, blocked, total: songs.length, playlistName: playlist.name })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
-
 // ─── REPARAR PLAYLIST ─────────────────────────────────────────────────────────
 
 app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
@@ -842,6 +797,20 @@ app.post('/request', async (req, res) => {
 })
 
 // ─── PANTALLA ─────────────────────────────────────────────────────────────────
+
+// ─── PANTALLA: REPORTAR VIDEO QUE FALLÓ AL REPRODUCIRSE ─────────────────────
+
+app.post('/screen/report-error', async (req, res) => {
+  const { videoId, title, thumbnail, errorCode } = req.body
+  if (!videoId || !title) return res.status(400).json({ ok: false })
+  try {
+    await logBlockedVideo(videoId, title, thumbnail, errorCode)
+    console.log(`⚠️  Video reportado como no disponible en pantalla: "${title}" (código ${errorCode})`)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ ok: false })
+  }
+})
 
 app.get('/screen/next', async (req, res) => {
   try {

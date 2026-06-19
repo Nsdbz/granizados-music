@@ -43,6 +43,16 @@
         <div id="reportsList"><p class="empty-msg">No hay reportes aún</p></div>
       </div>
 
+      <!-- Videos que fallaron en pantalla -->
+      <div class="card">
+        <div class="card-title">🚫 Videos no disponibles <span class="badge badge-red" id="blockedBadge" style="display:none">0</span></div>
+        <div class="card-sub">Canciones que fallaron al reproducirse en la pantalla</div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+          <button class="btn-sm btn-danger" onclick="clearBlocked()" id="clearBlockedBtn" style="display:none">🗑 Limpiar todo</button>
+        </div>
+        <div id="blockedList"><p class="empty-msg">No hay videos con problemas 🎉</p></div>
+      </div>
+
     </div>
 
     <!-- ── COLUMNA DERECHA ────────────────────────────────────────── -->
@@ -198,16 +208,6 @@
       </div>
       <img id="coverPreview" src="" alt="Preview" style="display:none;width:100%;border-radius:12px;margin-bottom:12px;max-height:200px;object-fit:cover;border:1px solid var(--border)"/>
       <button class="btn-primary" onclick="saveCover()">Guardar portada</button>
-    </div>
-  </div>
-
-  <!-- Modal: verificar videos bloqueados -->
-  <div class="modal-overlay" id="checkModal">
-    <div class="modal">
-      <button class="modal-close-btn" onclick="closeCheckModal()">✕</button>
-      <div class="modal-title">🔍 Verificar playlist</div>
-      <div class="modal-sub" id="checkModalSub">Verificando videos...</div>
-      <div id="checkModalBody"></div>
     </div>
   </div>
 

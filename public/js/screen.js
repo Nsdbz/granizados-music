@@ -45,6 +45,21 @@ function onPlayerStateChange(event) {
 async function handleVideoError(event) {
   if (!currentVideo) return
   console.log('Error YouTube código:', event.data, '— saltando:', currentVideo.title)
+
+  // Reportar al backend que este video falló en pantalla
+  try {
+    await fetch('/screen/report-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: currentVideo.videoId,
+        title: currentVideo.title,
+        thumbnail: currentVideo.thumbnail || null,
+        errorCode: event.data
+      })
+    })
+  } catch (e) {}
+
   await videoEnded()
 }
 
