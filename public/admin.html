@@ -1,213 +1,313 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin — Benditos Granizados</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="/css/admin.css">
-  <style>
-    .merge-fab { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 90; }
-    .pl-checkbox { width: 18px; height: 18px; accent-color: var(--purple); cursor: pointer; flex-shrink: 0; }
-    .merge-selected { border-color: var(--purple) !important; background: rgba(124,58,237,0.08) !important; }
-  </style>
+  <link rel="stylesheet" href="/css/admin.css"/>
 </head>
 <body>
 
-  <div class="top-bar">
-    <div class="top-brand">
-      <div class="top-logo"><img src="/img/logo.jpeg" alt="Logo"/></div>
-      <div class="top-title">Benditos Granizados</div>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TOP BAR
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="topbar-logo">
+        <img src="/img/logo.jpeg" alt="Logo Benditos Granizados"/>
+      </div>
+      <div>
+        <div class="topbar-name">Benditos Granizados</div>
+        <div class="topbar-sub">Panel de administración</div>
+      </div>
     </div>
-    <div class="top-badge">⚡ PANEL ADMIN</div>
-  </div>
+    <div class="topbar-right">
+      <div class="topbar-live">
+        <div class="live-dot"></div>
+        <span id="liveStatus">En línea</span>
+      </div>
+      <div class="topbar-badge">⚡ ADMIN</div>
+    </div>
+  </header>
 
-  <div class="layout">
+  <!-- ══════════════════════════════════════════════════════════════════════
+       WORKSPACE — 3 columnas
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <main class="workspace">
 
-    <!-- ── COLUMNA IZQUIERDA ─────────────────────────────────────── -->
+    <!-- ══ COLUMNA 1: Cola + Estadísticas ═══════════════════════════════ -->
     <div class="col">
 
-      <!-- Cola -->
+      <!-- Cola de reproducción -->
       <div class="card">
-        <div class="card-title">🎬 Cola de reproducción <span class="badge badge-green" id="queueBadge">0</span></div>
-        <div class="card-sub">Videos que suenan en la pantalla</div>
-        <div id="queueList"><p class="empty-msg">La cola está vacía</p></div>
-      </div>
-
-      <!-- Reportes diarios -->
-      <div class="card">
-        <div class="card-title">📅 Reporte diario</div>
-        <div class="card-sub">Estadísticas de los últimos 30 días</div>
-        <div id="reportsList"><p class="empty-msg">No hay reportes aún</p></div>
-      </div>
-
-      <!-- Videos que fallaron en pantalla -->
-      <div class="card">
-        <div class="card-title">🚫 Videos no disponibles <span class="badge badge-red" id="blockedBadge" style="display:none">0</span></div>
-        <div class="card-sub">Canciones que fallaron al reproducirse en la pantalla</div>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-          <button class="btn-sm btn-danger" onclick="clearBlocked()" id="clearBlockedBtn" style="display:none">🗑 Limpiar todo</button>
-        </div>
-        <div id="blockedList"><p class="empty-msg">No hay videos con problemas 🎉</p></div>
-      </div>
-
-    </div>
-
-    <!-- ── COLUMNA DERECHA ────────────────────────────────────────── -->
-    <div class="col">
-
-      <!-- Límite entre peticiones -->
-      <div class="card">
-        <div class="card-title">⏱ Límite entre peticiones</div>
-        <div class="card-sub">Minutos que debe esperar un cliente para pedir otra canción (0 = sin límite)</div>
-        <div class="limit-row">
-          <div class="limit-label">
-            Minutos de espera
-            <span id="limitStatus">Cargando...</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">🎬</span>
+            Cola de reproducción
+            <span class="badge badge-green" id="queueBadge">0</span>
           </div>
-          <input type="number" class="limit-input" id="limitInput" min="0" max="60" value="10"/>
+        </div>
+        <div class="card-sub">Videos programados para sonar en pantalla</div>
+        <div id="queueList">
+          <div class="queue-empty">
+            <div class="queue-empty-icon">📭</div>
+            <div class="queue-empty-text">La cola está vacía</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reporte diario (collapsable) -->
+      <div class="card">
+        <div class="card-header" style="margin-bottom:0">
+          <div class="card-title">
+            <span class="card-icon">📊</span>
+            Estadísticas
+          </div>
+        </div>
+        <div class="card-sub">Peticiones de usuarios en los últimos 30 días</div>
+
+        <button class="report-toggle-btn" id="reportToggleBtn" onclick="toggleReport()">
+          <span class="rtb-left">
+            <span>📅</span>
+            <span>Ver reporte diario</span>
+            <span class="badge badge-purple" id="reportBadge" style="display:none">0</span>
+          </span>
+          <span class="rtb-arrow">▼</span>
+        </button>
+
+        <div class="report-panel" id="reportPanel">
+          <div class="report-panel-inner">
+            <div id="reportsList">
+              <p class="loading-msg">Cargando reportes...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Videos con problemas -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">🚫</span>
+            Videos no disponibles
+            <span class="badge badge-red" id="blockedBadge" style="display:none">0</span>
+          </div>
+          <button class="btn-sm btn-danger" onclick="clearBlocked()" id="clearBlockedBtn" style="display:none">
+            🗑 Limpiar
+          </button>
+        </div>
+        <div class="card-sub">Videos que fallaron al reproducirse en pantalla</div>
+        <div id="blockedList">
+          <p class="empty-msg">No hay videos con problemas 🎉</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══ COLUMNA 2: Playlists ══════════════════════════════════════════ -->
+    <div class="col">
+
+      <!-- Crear nueva playlist -->
+      <div class="card">
+        <div class="card-title" style="margin-bottom:4px">
+          <span class="card-icon">➕</span>
+          Nueva playlist
+        </div>
+        <div class="card-sub">Importa una playlist pública de YouTube</div>
+
+        <div class="form-group">
+          <label class="form-label">URL de YouTube</label>
+          <input type="text" class="form-input" id="playlistUrl"
+            placeholder="https://www.youtube.com/playlist?list=..."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre</label>
+          <input type="text" class="form-input" id="playlistName"
+            placeholder="Ej: Reggaeton 🔥"/>
+        </div>
+
+        <!-- Imagen de la playlist (solo en creación) -->
+        <div class="form-group">
+          <label class="form-label">Imagen de portada</label>
+          <input type="text" class="form-input" id="playlistCoverUrl"
+            placeholder="URL de imagen (opcional)"
+            oninput="onNewPlaylistCoverInput(this)"/>
+          <div class="cover-preview-wrap" id="newCoverPreviewWrap">
+            <img class="cover-preview-img" id="newCoverPreviewImg" src="" alt="Preview"/>
+            <button class="cover-preview-clear" onclick="clearNewCover()" title="Quitar imagen">✕</button>
+          </div>
+        </div>
+
+        <button class="btn-primary" onclick="addPlaylist()">Importar playlist</button>
+        <div id="loadProgress" style="display:none" class="progress-msg">⏳ Cargando canciones...</div>
+      </div>
+
+      <!-- Lista de playlists -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">🎵</span>
+            Playlists
+            <span class="badge badge-purple" id="playlistBadge">0</span>
+          </div>
+        </div>
+        <div class="card-sub">Actívalas o desactívalas. Selecciona varias para combinar.</div>
+
+        <div class="search-row">
+          <input type="text" class="search-input" id="plSearchInput"
+            placeholder="Buscar playlist..."
+            oninput="filterPlaylists()"/>
+        </div>
+
+        <div id="playlistsList">
+          <p class="empty-msg">No hay playlists. Agrega una arriba.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══ COLUMNA 3: Configuración + Agregar canción ════════════════════ -->
+    <div class="col">
+
+      <!-- Configuración -->
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">
+          <span class="card-icon">⚙️</span>
+          Configuración
+        </div>
+
+        <!-- Límite entre peticiones -->
+        <div class="form-label" style="margin-bottom:8px">Espera entre peticiones</div>
+        <div class="setting-row" style="margin-bottom:14px">
+          <div class="setting-label">
+            <div class="setting-label-title">Minutos de espera</div>
+            <div class="setting-label-sub" id="limitStatus">Cargando...</div>
+          </div>
+          <input type="number" class="number-input" id="limitInput" min="0" max="60" value="10"/>
           <button class="btn-sm btn-save" onclick="saveLimit()">Guardar</button>
         </div>
-      </div>
 
-      <!-- Playlist de fondo -->
-      <div class="card">
-        <div class="card-title">🎲 Playlist de fondo</div>
-        <div class="card-sub">Se reproduce cuando no hay canciones en cola. Si no eliges ninguna, se usa una playlist aleatoria.</div>
-        <div class="limit-row">
-          <div class="limit-label">
-            Playlist activa
-            <span id="bgPlaylistStatus">Cargando...</span>
+        <div class="divider"></div>
+
+        <!-- Playlist de fondo -->
+        <div class="form-label" style="margin-bottom:8px">Playlist de fondo</div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <div class="setting-label-title">Playlist activa</div>
+            <div class="setting-label-sub" id="bgPlaylistStatus">Cargando...</div>
           </div>
-          <select class="limit-input" id="bgPlaylistSelect" style="width:auto;flex:1;font-family:'Nunito',sans-serif;font-size:.82rem;padding:8px 10px">
+          <select class="select-input" id="bgPlaylistSelect">
             <option value="">— Aleatoria —</option>
           </select>
           <button class="btn-sm btn-save" onclick="saveBgPlaylist()">Guardar</button>
         </div>
       </div>
 
-      <!-- Buscar y agregar canción -->
+      <!-- Agregar canción manualmente -->
       <div class="card">
-        <div class="card-title">🔍 Agregar canción</div>
+        <div class="card-title" style="margin-bottom:4px">
+          <span class="card-icon">🔍</span>
+          Agregar canción
+        </div>
         <div class="card-sub">Busca por nombre o pega el link de YouTube</div>
 
-        <!-- Tab switcher -->
-        <div style="display:flex;gap:6px;margin-bottom:14px">
-          <button id="tabSearch" class="btn-sm btn-add" style="flex:1;padding:8px" onclick="switchAddTab('search')">🔍 Buscar</button>
-          <button id="tabUrl" class="btn-sm btn-ghost" style="flex:1;padding:8px" onclick="switchAddTab('url')">🔗 URL de YouTube</button>
+        <div class="tab-row">
+          <button id="tabSearch" class="tab-btn active" onclick="switchAddTab('search')">🔍 Buscar</button>
+          <button id="tabUrl"    class="tab-btn"        onclick="switchAddTab('url')">🔗 URL</button>
         </div>
 
-        <!-- Panel: buscar -->
+        <!-- Panel búsqueda -->
         <div id="panelSearch">
           <div class="search-row">
-            <input type="text" class="search-input" id="songSearchInput" placeholder="Buscar canción o artista..."/>
-            <button class="btn-sm btn-add" onclick="searchSongs()" style="padding:0 16px;height:42px">Buscar</button>
+            <input type="text" class="search-input" id="songSearchInput"
+              placeholder="Buscar canción o artista..."/>
+            <button class="btn-sm btn-add" onclick="searchSongs()"
+              style="padding:0 14px;height:38px">Buscar</button>
           </div>
-          <div id="songSearchResults"></div>
+          <div class="song-results" id="songSearchResults"></div>
         </div>
 
-        <!-- Panel: URL -->
+        <!-- Panel URL -->
         <div id="panelUrl" style="display:none">
           <div class="search-row">
-            <input type="text" class="search-input" id="songUrlInput" placeholder="https://www.youtube.com/watch?v=..."/>
-            <button class="btn-sm btn-add" onclick="loadFromUrl()" style="padding:0 16px;height:42px">Cargar</button>
+            <input type="text" class="search-input" id="songUrlInput"
+              placeholder="https://www.youtube.com/watch?v=..."/>
+            <button class="btn-sm btn-add" onclick="loadFromUrl()"
+              style="padding:0 14px;height:38px">Cargar</button>
           </div>
-          <div id="urlPreview" style="display:none;background:var(--card2);border-radius:12px;padding:12px;margin-top:4px">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-              <img id="urlThumb" src="" alt="" style="width:72px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border);flex-shrink:0"/>
-              <div style="flex:1;min-width:0">
-                <div id="urlTitle" style="font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-                <div id="urlVideoId" style="font-size:.7rem;color:var(--muted);margin-top:3px"></div>
+          <div class="url-preview" id="urlPreview">
+            <div class="url-preview-inner">
+              <img class="url-preview-thumb" id="urlThumb" src="" alt=""/>
+              <div class="min-w-0 flex-1">
+                <div class="url-preview-title" id="urlTitle"></div>
+                <div class="url-preview-id" id="urlVideoId"></div>
               </div>
             </div>
-            <div style="display:flex;gap:6px">
-              <button class="btn-sm btn-add" style="flex:1;padding:8px" onclick="addUrlToQueue()">+ Cola</button>
-              <button class="btn-sm btn-ghost" style="flex:1;padding:8px" onclick="addUrlToPlaylist()">+ Playlist</button>
+            <div class="url-preview-actions">
+              <button class="btn-sm btn-add" style="flex:1;justify-content:center;padding:7px" onclick="addUrlToQueue()">+ Cola</button>
+              <button class="btn-sm btn-ghost" style="flex:1;justify-content:center;padding:7px" onclick="addUrlToPlaylist()">+ Playlist</button>
             </div>
           </div>
-          <div id="urlError" style="display:none;font-size:.78rem;font-weight:700;color:var(--pink);margin-top:8px;text-align:center"></div>
+          <div class="error-msg" id="urlError" style="display:none"></div>
         </div>
-      </div>
-
-      <!-- Agregar playlist -->
-      <div class="card">
-        <div class="card-title">➕ Agregar playlist</div>
-        <div class="card-sub">Pega el link de una playlist pública de YouTube</div>
-        <div class="form-group">
-          <input type="text" class="form-input" id="playlistUrl" placeholder="https://www.youtube.com/playlist?list=..."/>
-        </div>
-        <div class="form-group">
-          <input type="text" class="form-input" id="playlistName" placeholder="Nombre (ej: Reggaeton 🔥)"/>
-        </div>
-        <button class="btn-primary" onclick="addPlaylist()">Cargar playlist</button>
-        <div id="loadProgress" style="display:none" class="progress-msg">⏳ Cargando canciones...</div>
-      </div>
-
-      <!-- Playlists -->
-      <div class="card">
-        <div class="card-title">🎵 Playlists</div>
-        <div class="card-sub">Actívalas o desactívalas. Agrega canciones sueltas a cada una.</div>
-        <div class="search-row" style="margin-bottom:14px">
-          <input type="text" class="search-input" id="plSearchInput" placeholder="Buscar playlist..." oninput="filterPlaylists()"/>
-        </div>
-        <div id="playlistsList"><p class="empty-msg">No hay playlists. Agrega una arriba.</p></div>
       </div>
 
     </div>
 
+  </main>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TOAST
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FAB — Combinar playlists
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="merge-fab" id="mergeFab" style="display:none">
+    <button class="merge-fab-btn" onclick="openMergeModal()">
+      🔀 Combinar
+      <span class="badge badge-green" id="mergeFabCount">0</span>
+    </button>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       MODALES
+  ══════════════════════════════════════════════════════════════════════════ -->
 
   <!-- Modal: combinar playlists -->
   <div class="modal-overlay" id="mergeModal">
     <div class="modal">
-      <button class="modal-close-btn" onclick="closeMergeModal()">✕</button>
+      <button class="modal-close" onclick="closeMergeModal()">✕</button>
       <div class="modal-title">🔀 Combinar playlists</div>
       <div class="modal-sub" id="mergeModalSub"></div>
-      <div class="form-group" style="margin-top:12px">
-        <input type="text" class="form-input" id="mergeNameInput" placeholder="Nombre de la nueva playlist..."/>
+      <div class="form-group mt-12">
+        <label class="form-label">Nombre de la nueva playlist</label>
+        <input type="text" class="form-input" id="mergeNameInput" placeholder="Nombre..."/>
       </div>
       <button class="btn-primary" onclick="confirmMerge()">Crear playlist combinada</button>
     </div>
   </div>
 
-  <!-- Botón flotante combinar -->
-  <div class="merge-fab" id="mergeFab" style="display:none">
-    <button class="btn-primary" style="width:auto;padding:10px 20px;display:flex;align-items:center;gap:8px" onclick="openMergeModal()">
-      🔀 Combinar <span id="mergeFabCount" class="badge badge-green">0</span>
-    </button>
-  </div>
-
   <!-- Modal: agregar canción a playlist -->
   <div class="modal-overlay" id="addToPlaylistModal">
     <div class="modal">
-      <button class="modal-close-btn" onclick="closeAddModal()">✕</button>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
       <div class="modal-title">➕ Agregar a playlist</div>
       <div class="modal-sub" id="addModalSongTitle"></div>
-      <div class="search-row">
-        <input type="text" class="search-input" id="addToPlSearchInput" placeholder="Buscar otra canción..."/>
-        <button class="btn-sm btn-add" onclick="searchForPlaylist()" style="padding:0 14px;height:42px">Buscar</button>
+      <div class="search-row mt-4">
+        <input type="text" class="search-input" id="addToPlSearchInput"
+          placeholder="Buscar otra canción..."/>
+        <button class="btn-sm btn-add" onclick="searchForPlaylist()"
+          style="padding:0 12px;height:38px">Buscar</button>
       </div>
-      <div id="addToPlResults"></div>
-      <div style="margin-top:14px;font-size:.78rem;font-weight:700;color:var(--muted)">Selecciona la playlist destino:</div>
-      <div id="targetPlaylists" style="margin-top:8px"></div>
-    </div>
-  </div>
-
-  <!-- Modal: portada de playlist -->
-  <div class="modal-overlay" id="coverModal">
-    <div class="modal">
-      <button class="modal-close-btn" onclick="closeCoverModal()">✕</button>
-      <div class="modal-title">🖼 Portada de playlist</div>
-      <div class="modal-sub" id="coverModalTitle"></div>
-      <div class="form-group" style="margin-top:12px">
-        <input type="text" class="form-input" id="coverPasteArea" placeholder="Pega aquí la URL de la imagen..." oninput="onCoverPaste(this)"/>
-      </div>
-      <img id="coverPreview" src="" alt="Preview" style="display:none;width:100%;border-radius:12px;margin-bottom:12px;max-height:200px;object-fit:cover;border:1px solid var(--border)"/>
-      <button class="btn-primary" onclick="saveCover()">Guardar portada</button>
+      <div class="song-results" id="addToPlResults"></div>
+      <div class="divider"></div>
+      <div class="form-label">Playlist destino</div>
+      <div id="targetPlaylists" class="mt-8"></div>
     </div>
   </div>
 
