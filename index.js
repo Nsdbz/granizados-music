@@ -240,6 +240,27 @@ async function fetchYoutubePlaylist(playlistId) {
   return embeddable
 }
 
+// ─── ADMIN: INFO DE VIDEO POR ID ─────────────────────────────────────────────
+
+app.get('/admin/song-info', adminAuth, async (req, res) => {
+  const { videoId } = req.query
+  if (!videoId) return res.status(400).json({ error: 'Falta el videoId' })
+  try {
+    const response = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'snippet', id: videoId, key: process.env.YOUTUBE_API_KEY }
+    })
+    const item = response.data.items?.[0]
+    if (!item) return res.status(404).json({ error: 'Video no encontrado' })
+    res.json({
+      videoId,
+      title: item.snippet.title,
+      thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url || null
+    })
+  } catch (e) {
+    res.status(500).json({ error: 'Error consultando YouTube' })
+  }
+})
+
 // ─── ADMIN: CONFIG ────────────────────────────────────────────────────────────
 
 app.get('/admin/config', adminAuth, async (req, res) => {
@@ -300,7 +321,7 @@ app.get('/admin/playlists', adminAuth, async (req, res) => {
 })
 
 app.post('/admin/playlists', adminAuth, async (req, res) => {
-  const { url, name } = req.body
+  const { url, name, cover } = req.body
   if (!url || !name) return res.status(400).json({ error: 'Faltan url y nombre' })
   let playlistId = url
   const match = url.match(/[?&]list=([^&]+)/)
@@ -312,7 +333,7 @@ app.post('/admin/playlists', adminAuth, async (req, res) => {
     const exists = playlists.find(p => p.youtubeId === playlistId)
     if (exists) return res.status(400).json({ error: 'Esa playlist ya está agregada' })
     const id = `pl_${Date.now()}`
-    playlists.push({ id, youtubeId: playlistId, name, total: songs.length, active: true, createdAt: Date.now() })
+    playlists.push({ id, youtubeId: playlistId, name, cover: cover || null, total: songs.length, active: true, createdAt: Date.now() })
     await savePlaylists(playlists)
     await savePlaylistSongs(id, songs)
     res.json({ ok: true, name, total: songs.length, filtered: true })
@@ -646,6 +667,14 @@ app.delete('/screen/played/:id', async (req, res) => {
     await saveQueue(queue.filter(v => v.id !== req.params.id))
     res.json({ ok: true })
   } catch (error) { res.status(500).json({ error: error.message }) }
+})
+
+app.post('/screen/report-error', async (req, res) => {
+  try {
+    const { videoId, title, thumbnail, errorCode } = req.body
+    if (videoId && title) await logBlockedVideo(videoId, title, thumbnail, errorCode)
+    res.json({ ok: true })
+  } catch (e) { res.json({ ok: false }) }
 })
 
 app.get('/screen/queue', async (req, res) => {

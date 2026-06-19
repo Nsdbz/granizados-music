@@ -386,7 +386,10 @@ function renderPlaylists(playlists) {
         <input type="checkbox" class="pl-checkbox" ${isChecked ? 'checked' : ''}
           onchange="toggleMergeSelect('${pl.id}', this.checked)"
           title="Seleccionar para combinar"/>
-        ${coverEl}
+        <div class="pl-cover-wrap" onclick="openCoverModal('${pl.id}','${esc(pl.cover||'')}')" title="Cambiar imagen de portada">
+          ${coverEl}
+          <div class="pl-cover-edit-hint">✏️</div>
+        </div>
         <div class="pl-info">
           <div class="pl-name">${pl.name}</div>
           <div class="pl-meta">
@@ -685,3 +688,69 @@ function timeAgo(ts) {
   if (m < 60) return `hace ${m} min`
   return `hace ${Math.floor(m / 60)} h`
 }
+
+// ─── MODAL: EDITAR PORTADA DE PLAYLIST ───────────────────────────────────────
+
+let editingCoverPlaylistId = null
+
+function openCoverModal(playlistId, currentCover) {
+  editingCoverPlaylistId = playlistId
+  const input = document.getElementById('coverModalInput')
+  const preview = document.getElementById('coverModalPreview')
+  const wrap = document.getElementById('coverModalPreviewWrap')
+  input.value = currentCover || ''
+  if (currentCover) {
+    preview.src = currentCover
+    wrap.classList.add('show')
+  } else {
+    wrap.classList.remove('show')
+    preview.src = ''
+  }
+  document.getElementById('coverModal').classList.add('open')
+  setTimeout(() => input.focus(), 100)
+}
+
+function closeCoverModal() {
+  document.getElementById('coverModal').classList.remove('open')
+  editingCoverPlaylistId = null
+}
+
+function onCoverModalInput(input) {
+  const url = input.value.trim()
+  const wrap = document.getElementById('coverModalPreviewWrap')
+  const img  = document.getElementById('coverModalPreview')
+  if (!url) { wrap.classList.remove('show'); return }
+  img.src = url
+  img.onload  = () => wrap.classList.add('show')
+  img.onerror = () => wrap.classList.remove('show')
+}
+
+async function saveCover() {
+  const url = document.getElementById('coverModalInput').value.trim()
+  const btn = document.getElementById('saveCoverBtn')
+  btn.disabled = true; btn.textContent = '...'
+  try {
+    const res  = await fetch(`/admin/playlists/${editingCoverPlaylistId}/cover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cover: url || null })
+    })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(url ? '✅ Portada actualizada' : '✅ Portada eliminada')
+      closeCoverModal()
+      loadPlaylists()
+    } else {
+      showToast(data.error || 'Error guardando', true)
+    }
+  } catch (e) {
+    showToast('Error de conexión', true)
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar'
+  }
+}
+
+// Cerrar modal de portada al click fuera
+document.addEventListener('click', e => {
+  if (e.target === document.getElementById('coverModal')) closeCoverModal()
+})

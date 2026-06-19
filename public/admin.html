@@ -311,6 +311,25 @@
     </div>
   </div>
 
+  <!-- Modal: editar portada de playlist -->
+  <div class="modal-overlay" id="coverModal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeCoverModal()">✕</button>
+      <div class="modal-title">🖼️ Portada de playlist</div>
+      <div class="modal-sub">Pega el URL de la imagen que quieres usar como portada</div>
+      <div class="form-group mt-12">
+        <label class="form-label">URL de la imagen</label>
+        <input type="text" class="form-input" id="coverModalInput"
+          placeholder="https://..." oninput="onCoverModalInput(this)"/>
+      </div>
+      <div class="cover-preview-wrap" id="coverModalPreviewWrap">
+        <img class="cover-preview-img" id="coverModalPreview" src="" alt="Preview"/>
+        <button class="cover-preview-clear" onclick="document.getElementById('coverModalInput').value=''; document.getElementById('coverModalPreviewWrap').classList.remove('show')" title="Quitar imagen">✕</button>
+      </div>
+      <button class="btn-primary" id="saveCoverBtn" onclick="saveCover()">Guardar</button>
+    </div>
+  </div>
+
   <script src="/js/admin.js"></script>
 </body>
 </html>

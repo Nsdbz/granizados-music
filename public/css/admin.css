@@ -910,3 +910,49 @@ body {
 @media (max-width: 720px) {
   .workspace { grid-template-columns: 1fr; padding: 72px 14px 24px; }
 }
+/* ─── COVER WRAP (editable) ──────────────────────────────────────────────── */
+
+.pl-cover-wrap {
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.pl-cover-wrap:hover .pl-cover,
+.pl-cover-wrap:hover .pl-cover-ph {
+  opacity: 0.55;
+}
+
+.pl-cover-edit-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+  border-radius: 8px;
+}
+
+.pl-cover-wrap:hover .pl-cover-edit-hint {
+  opacity: 1;
+}
+
+/* ─── COVER MODAL ──────────────────────────────────────────────────────────── */
+
+#coverModal .modal {
+  max-width: 420px;
+}
+
+/* ─── CLIENT: playlist cover image ────────────────────────────────────────── */
+
+.pl-icon-img {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}

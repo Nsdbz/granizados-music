@@ -36,7 +36,10 @@ async function loadPlaylists() {
 
     el.innerHTML = playlists.map(pl => `
       <div class="playlist-card" onclick="openPlaylist('${pl.id}', '${escAttr(pl.name)}')">
-        <div class="pl-icon">🎵</div>
+        ${pl.cover
+          ? `<img class="pl-icon pl-icon-img" src="${pl.cover}" alt="${escAttr(pl.name)}" onerror="this.outerHTML='<div class=\\'pl-icon\\'>🎵</div>'">`
+          : '<div class="pl-icon">🎵</div>'
+        }
         <div class="pl-name">${pl.name}</div>
         <div class="pl-meta">${pl.total} canciones</div>
         <div class="pl-arrow">→</div>
