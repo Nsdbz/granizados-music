@@ -83,9 +83,16 @@ async function saveConfig(config) {
 
 // ─── ESTADÍSTICAS DIARIAS ─────────────────────────────────────────────────────
 
+// Colombia = UTC-5, sin cambio de horario de verano
 function getTodayKey() {
-  const d = new Date()
-  return `daily_stats:${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date())
+  const y = parts.find(p => p.type === 'year').value
+  const m = parts.find(p => p.type === 'month').value
+  const d = parts.find(p => p.type === 'day').value
+  return `daily_stats:${y}-${m}-${d}`
 }
 
 async function incrementDailyStat(video) {
@@ -107,11 +114,12 @@ async function getDailyStats(date) {
 }
 
 async function getAvailableDates() {
-  const today = new Date()
+  // Calcular "hoy" en hora Colombia para que el rango de 30 días sea correcto
+  const nowColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
   const dateStrs = []
   for (let i = 0; i < 30; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
+    const d = new Date(nowColombia)
+    d.setDate(nowColombia.getDate() - i)
     dateStrs.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)
   }
   const results = await Promise.all(dateStrs.map(date => redis.get(`daily_stats:${date}`).catch(() => null)))

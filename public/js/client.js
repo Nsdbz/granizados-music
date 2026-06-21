@@ -91,11 +91,53 @@ function renderSongs(songs) {
   `).join('')
 }
 
+// ─── BÚSQL─UEDA MEJORADA ─────────────────────────────────────────────────────────────────────────────
+
+function normalize(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function scoreMatch(title, queryWords) {
+  const normTitle = normalize(title)
+  const titleWords = normTitle.split(' ')
+
+  for (const qw of queryWords) {
+    if (!normTitle.includes(qw)) return -1
+  }
+
+  let score = 0
+
+  for (const qw of queryWords) {
+    if (titleWords.some(tw => tw.startsWith(qw)))  score += 30
+    if (normTitle.startsWith(qw))                   score += 10
+    if (titleWords.includes(qw))                    score += 20
+  }
+
+  const fullQuery = queryWords.join(' ')
+  if (normTitle.includes(fullQuery)) score += 50
+
+  return score
+}
+
 function filterSongs() {
-  const q = document.getElementById('searchInput').value.toLowerCase().trim()
-  if (!q) { renderSongs(allSongs); return }
-  const filtered = allSongs.filter(s => s.title.toLowerCase().includes(q))
-  renderSongs(filtered)
+  const raw = document.getElementById('searchInput').value.trim()
+  if (!raw) { renderSongs(allSongs); return }
+
+  const queryWords = normalize(raw).split(' ').filter(Boolean)
+  if (!queryWords.length) { renderSongs(allSongs); return }
+
+  const scored = allSongs
+    .map(s => ({ song: s, score: scoreMatch(s.title, queryWords) }))
+    .filter(x => x.score >= 0)
+    .sort((a, b) => b.score - a.score)
+
+  renderSongs(scored.map(x => x.song))
 }
 
 function goBack() {
