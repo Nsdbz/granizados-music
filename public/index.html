@@ -649,6 +649,7 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    // ─── ESTADO ───────────────────────────────────────────────────────────────
     let allSongs = []
     let selectedSong = null
     let allPlaylistsCache = []
@@ -659,6 +660,97 @@
       if (!id) { id = crypto.randomUUID(); localStorage.setItem('granizados_client_id', id) }
       return id
     }
+
+    // ─── MOTOR DE BÚSQUEDA ────────────────────────────────────────────────────
+
+    // Normaliza: minúsculas, sin acentos, sin caracteres raros
+    function norm(str) {
+      return (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')   // quita diacríticos (á→a, ñ→n, etc.)
+        .replace(/[^a-z0-9\s]/g, ' ')       // símbolos → espacio
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+
+    // Distancia de Levenshtein (para typos)
+    function levenshtein(a, b) {
+      if (a === b) return 0
+      if (a.length === 0) return b.length
+      if (b.length === 0) return a.length
+      const dp = Array.from({ length: a.length + 1 }, (_, i) => [i])
+      for (let j = 1; j <= b.length; j++) dp[0][j] = j
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          dp[i][j] = a[i-1] === b[j-1]
+            ? dp[i-1][j-1]
+            : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+        }
+      }
+      return dp[a.length][b.length]
+    }
+
+    // ¿Una palabra del título es "cercana" a la palabra buscada? (tolera 1 typo en palabras largas)
+    function fuzzyWordMatch(titleWord, queryWord) {
+      if (titleWord === queryWord) return true
+      if (titleWord.startsWith(queryWord)) return true
+      const maxDist = queryWord.length >= 5 ? 1 : 0   // solo typos en palabras de 5+ letras
+      return levenshtein(titleWord, queryWord) <= maxDist
+    }
+
+    // Motor principal: devuelve score numérico (< 0 = excluir)
+    function scoreMatch(title, queryWords) {
+      const normTitle = norm(title)
+      const titleWords = normTitle.split(' ')
+      const fullQuery  = queryWords.join(' ')
+
+      // — Cada palabra de la query debe tener al menos coincidencia fuzzy en alguna palabra del título
+      for (const qw of queryWords) {
+        const hasMatch = titleWords.some(tw => fuzzyWordMatch(tw, qw))
+        if (!hasMatch) return -1
+      }
+
+      let score = 0
+
+      // Nivel 1 — coincidencia exacta de la frase completa (máximo bonus)
+      if (normTitle === fullQuery)                          score += 200
+      else if (normTitle.startsWith(fullQuery + ' '))       score += 150
+      else if (normTitle.includes(fullQuery))               score += 100
+
+      // Nivel 2 — cada palabra de la query analizada individualmente
+      for (const qw of queryWords) {
+        for (const tw of titleWords) {
+          if (tw === qw)                  { score += 40; break }  // palabra exacta
+          if (tw.startsWith(qw))          { score += 25; break }  // prefijo
+          if (tw.includes(qw))            { score += 15; break }  // substring
+          if (fuzzyWordMatch(tw, qw))     { score +=  8; break }  // fuzzy (typo)
+        }
+      }
+
+      // Nivel 3 — boost si el título empieza con la query
+      if (normTitle.startsWith(queryWords[0]))              score += 20
+
+      // Nivel 4 — penalizar títulos muy largos (menos relevantes si la query es corta)
+      score -= Math.floor(titleWords.length / 6)
+
+      return score
+    }
+
+    // Punto de entrada: recibe array de songs, devuelve los relevantes ordenados
+    function searchSongs(songs, rawQuery) {
+      if (!rawQuery.trim()) return songs
+      const queryWords = norm(rawQuery).split(' ').filter(Boolean)
+      if (!queryWords.length) return songs
+
+      return songs
+        .map(s => ({ s, score: scoreMatch(s.title, queryWords) }))
+        .filter(x => x.score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .map(x => x.s)
+    }
+
+    // ─── CARGA DE PLAYLISTS ───────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', loadPlaylists)
 
@@ -691,6 +783,8 @@
       }
     }
 
+    // ─── CACHÉ GLOBAL DE CANCIONES ────────────────────────────────────────────
+
     async function loadAllSongsGlobal() {
       if (allSongsGlobal) return allSongsGlobal
       const lists = allPlaylistsCache.length ? allPlaylistsCache : await (await fetch('/playlists')).json()
@@ -708,46 +802,59 @@
       return merged
     }
 
-    async function filterGlobalSearch() {
-      const q = document.getElementById('globalSearchInput').value.toLowerCase().trim()
-      const resultsEl = document.getElementById('globalSearchResults')
-      const gridEl = document.getElementById('playlistsGrid')
-      const labelEl = document.querySelector('.section-label')
+    // ─── BÚSQUEDA GLOBAL ──────────────────────────────────────────────────────
 
-      if (!q) {
+    let globalSearchTimer = null
+
+    async function filterGlobalSearch() {
+      const q = document.getElementById('globalSearchInput').value
+      const resultsEl = document.getElementById('globalSearchResults')
+      const gridEl    = document.getElementById('playlistsGrid')
+      const labelEl   = document.querySelector('.section-label')
+      const decoEl    = document.querySelector('.deco-dots')
+
+      if (!q.trim()) {
         resultsEl.innerHTML = ''
         gridEl.style.display = ''
         if (labelEl) labelEl.style.display = ''
+        if (decoEl)  decoEl.style.display  = ''
         return
       }
 
       gridEl.style.display = 'none'
       if (labelEl) labelEl.style.display = 'none'
-      resultsEl.innerHTML = '<p class="loading-msg">Buscando...</p>'
+      if (decoEl)  decoEl.style.display  = 'none'
 
-      const songs = await loadAllSongsGlobal()
-      const filtered = songs.filter(s => s.title.toLowerCase().includes(q))
+      // Debounce: espera 180ms antes de ejecutar para no buscar en cada tecla
+      clearTimeout(globalSearchTimer)
+      globalSearchTimer = setTimeout(async () => {
+        resultsEl.innerHTML = '<p class="loading-msg">Buscando...</p>'
+        const songs   = await loadAllSongsGlobal()
+        const results = searchSongs(songs, q)
 
-      if (!filtered.length) {
-        resultsEl.innerHTML = '<p class="empty-msg">No se encontraron canciones 🔍</p>'
-        return
-      }
+        if (!results.length) {
+          resultsEl.innerHTML = '<p class="empty-msg">No se encontraron canciones 🔍</p>'
+          return
+        }
 
-      resultsEl.innerHTML = `
-        <div class="songs-list" style="padding:0 14px 10px">
-          ${filtered.map(s => `
-            <div class="song-item" onclick="openConfirm('${s.videoId}', '${escAttr(s.title)}', '${s.thumbnail || ''}')">
-              ${s.thumbnail
-                ? `<img class="s-thumb" src="${s.thumbnail}" alt="${escAttr(s.title)}">`
-                : '<div class="s-thumb s-thumb-ph">🎵</div>'
-              }
-              <div class="s-info"><div class="s-title">${s.title}</div></div>
-              <div class="s-add">+</div>
-            </div>
-          `).join('')}
-        </div>
-      `
+        resultsEl.innerHTML = `
+          <div class="songs-list" style="padding:0 14px 10px">
+            ${results.map(s => `
+              <div class="song-item" onclick="openConfirm('${s.videoId}', '${escAttr(s.title)}', '${s.thumbnail || ''}')">
+                ${s.thumbnail
+                  ? `<img class="s-thumb" src="${s.thumbnail}" alt="${escAttr(s.title)}">`
+                  : '<div class="s-thumb s-thumb-ph">🎵</div>'
+                }
+                <div class="s-info"><div class="s-title">${s.title}</div></div>
+                <div class="s-add">+</div>
+              </div>
+            `).join('')}
+          </div>
+        `
+      }, 180)
     }
+
+    // ─── VISTA CANCIONES ──────────────────────────────────────────────────────
 
     async function openPlaylist(id, name) {
       document.getElementById('songsTitle').textContent = name
@@ -779,15 +886,19 @@
     }
 
     function filterSongs() {
-      const q = document.getElementById('searchInput').value.toLowerCase().trim()
-      renderSongs(q ? allSongs.filter(s => s.title.toLowerCase().includes(q)) : allSongs)
+      const q = document.getElementById('searchInput').value
+      renderSongs(searchSongs(allSongs, q))
     }
+
+    // ─── NAVEGACIÓN ───────────────────────────────────────────────────────────
 
     function goBack() { showView('viewPlaylists'); allSongs = [] }
     function showView(id) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
       document.getElementById(id).classList.add('active')
     }
+
+    // ─── MODAL ────────────────────────────────────────────────────────────────
 
     function openConfirm(videoId, title, thumbnail) {
       selectedSong = { videoId, title, thumbnail }
@@ -820,6 +931,8 @@
         btn.disabled = false; btn.textContent = '¡Sí, pónla! 🔥'
       }
     }
+
+    // ─── UTILIDADES ───────────────────────────────────────────────────────────
 
     function showToast(msg, isError = false) {
       const el = document.getElementById('toast')
