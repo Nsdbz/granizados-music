@@ -503,7 +503,6 @@ app.post('/admin/add-to-queue', adminAuth, async (req, res) => {
       approvedAt: Date.now()
     })
     await saveQueue(queue)
-    await incrementDailyStat({ videoId, title, thumbnail })
     res.json({ ok: true })
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
