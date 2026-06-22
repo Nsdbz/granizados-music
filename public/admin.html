@@ -354,6 +354,23 @@
     </div>
   </div>
 
+  <!-- Modal: videos bloqueados al importar -->
+  <div class="modal-overlay" id="blockedImportModal">
+    <div class="modal modal-songs">
+      <div class="modal-songs-header">
+        <div>
+          <div class="modal-title" id="blockedImportTitle"></div>
+          <div class="modal-sub" id="blockedImportSub" style="text-align:left;margin-bottom:0"></div>
+        </div>
+        <button class="modal-close" onclick="closeBlockedImportModal()">✕</button>
+      </div>
+      <p style="font-size:.8rem;color:var(--muted);margin-bottom:10px">
+        🚫 Estos videos no se pueden reproducir en reproductores externos. YouTube los bloquea por restricciones del sello discográfico.
+      </p>
+      <div class="songs-modal-list" id="blockedImportList"></div>
+    </div>
+  </div>
+
   <!-- Modal: editar portada de playlist -->
   <div class="modal-overlay" id="coverModal">
     <div class="modal">

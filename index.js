@@ -221,11 +221,13 @@ async function fetchYoutubePlaylist(playlistId) {
     pageToken = response.data.nextPageToken || null
   } while (pageToken)
 
-  // ── Paso 1: filtrar embeddables en lote ──────────────────────────────────
+  // ── Filtrar embeddables en lote ──────────────────────────────────────────
   const embeddable = []
+  const blocked    = []
+
   for (let i = 0; i < songs.length; i += 50) {
     const batch = songs.slice(i, i + 50)
-    const ids = batch.map(s => s.videoId).join(',')
+    const ids   = batch.map(s => s.videoId).join(',')
     try {
       const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
         params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
@@ -237,6 +239,7 @@ async function fetchYoutubePlaylist(playlistId) {
       )
       batch.forEach(song => {
         if (embeddableIds.has(song.videoId)) embeddable.push(song)
+        else blocked.push(song)
       })
     } catch (e) {
       console.log('Error verificando embedding del lote:', e.message)
@@ -244,8 +247,8 @@ async function fetchYoutubePlaylist(playlistId) {
     }
   }
 
-  console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables`)
-  return embeddable
+  console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables, ${blocked.length} bloqueados`)
+  return { embeddable, blocked }
 }
 
 // ─── ADMIN: INFO DE VIDEO POR ID ─────────────────────────────────────────────
@@ -335,16 +338,16 @@ app.post('/admin/playlists', adminAuth, async (req, res) => {
   const match = url.match(/[?&]list=([^&]+)/)
   if (match) playlistId = match[1]
   try {
-    const songs = await fetchYoutubePlaylist(playlistId)
-    if (!songs.length) return res.status(400).json({ error: 'No se encontraron videos reproducibles en esa playlist (todos tienen restricción de embedding)' })
+    const { embeddable, blocked } = await fetchYoutubePlaylist(playlistId)
+    if (!embeddable.length) return res.status(400).json({ error: 'No se encontraron videos reproducibles en esa playlist (todos tienen restricción de embedding)' })
     const playlists = await getPlaylists()
     const exists = playlists.find(p => p.youtubeId === playlistId)
     if (exists) return res.status(400).json({ error: 'Esa playlist ya está agregada' })
     const id = `pl_${Date.now()}`
-    playlists.push({ id, youtubeId: playlistId, name, cover: cover || null, total: songs.length, active: true, createdAt: Date.now() })
+    playlists.push({ id, youtubeId: playlistId, name, cover: cover || null, total: embeddable.length, active: true, createdAt: Date.now() })
     await savePlaylists(playlists)
-    await savePlaylistSongs(id, songs)
-    res.json({ ok: true, name, total: songs.length, filtered: true })
+    await savePlaylistSongs(id, embeddable)
+    res.json({ ok: true, name, total: embeddable.length, skipped: blocked.length, blockedSongs: blocked })
   } catch (error) { res.status(500).json({ error: 'No se pudo cargar la playlist. Verifica que sea pública.' }) }
 })
 
@@ -363,11 +366,11 @@ app.post('/admin/playlists/:id/reload', adminAuth, async (req, res) => {
     const playlists = await getPlaylists()
     const playlist = playlists.find(p => p.id === req.params.id)
     if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
-    const songs = await fetchYoutubePlaylist(playlist.youtubeId)
-    playlist.total = songs.length
+    const { embeddable, blocked } = await fetchYoutubePlaylist(playlist.youtubeId)
+    playlist.total = embeddable.length
     await savePlaylists(playlists)
-    await savePlaylistSongs(playlist.id, songs)
-    res.json({ ok: true, total: songs.length })
+    await savePlaylistSongs(playlist.id, embeddable)
+    res.json({ ok: true, total: embeddable.length, skipped: blocked.length, blockedSongs: blocked })
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 

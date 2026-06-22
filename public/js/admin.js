@@ -4,6 +4,7 @@ let allPlaylists    = []
 let songToAdd       = null
 let selectedForMerge = new Set()
 let reportOpen      = false
+let videoPlaylistMap = {}   // cache: videoId -> [{ id, name }]
 
 // ─── INICIO ───────────────────────────────────────────────────────────────────
 
@@ -522,6 +523,19 @@ async function loadPlaylists() {
     renderPlaylists(allPlaylists)
     document.getElementById('playlistBadge').textContent = allPlaylists.length
     loadBgPlaylist()
+
+    // Reconstruir cache videoId -> playlists
+    videoPlaylistMap = {}
+    for (const pl of allPlaylists) {
+      try {
+        const r = await fetch(`/playlists/${pl.id}/songs`)
+        const songs = await r.json()
+        songs.forEach(s => {
+          if (!videoPlaylistMap[s.videoId]) videoPlaylistMap[s.videoId] = []
+          videoPlaylistMap[s.videoId].push({ id: pl.id, name: pl.name })
+        })
+      } catch (e) {}
+    }
   } catch (e) {}
 }
 
@@ -677,17 +691,55 @@ async function addPlaylist() {
     })
     const data = await res.json()
     if (data.ok) {
-      showToast(`✅ "${name}" — ${data.total} canciones`)
-      document.getElementById('playlistUrl').value     = ''
-      document.getElementById('playlistName').value    = ''
+      document.getElementById('playlistUrl').value  = ''
+      document.getElementById('playlistName').value = ''
       clearNewCover()
       loadPlaylists()
+
+      if (data.skipped > 0) {
+        showBlockedImportAlert(name, data.total, data.skipped, data.blockedSongs || [])
+      } else {
+        showToast(`✅ "${name}" — ${data.total} canciones`)
+      }
     } else showToast(data.error, true)
   } catch (e) { showToast('Error de conexión', true) }
   finally {
     document.getElementById('loadProgress').style.display = 'none'
     document.querySelector('[onclick="addPlaylist()"]').disabled = false
   }
+}
+
+// ─── ALERTA DE VIDEOS BLOQUEADOS AL IMPORTAR ─────────────────────────────────
+
+function showBlockedImportAlert(playlistName, total, skipped, blockedSongs) {
+  document.getElementById('blockedImportTitle').textContent = `"${playlistName}" importada`
+  document.getElementById('blockedImportSub').innerHTML =
+    `<span class="badge badge-green">${total} canciones agregadas</span> &nbsp; <span class="badge badge-red">${skipped} bloqueadas por YouTube</span>`
+
+  const list = document.getElementById('blockedImportList')
+  if (blockedSongs.length) {
+    list.innerHTML = blockedSongs.map(s => `
+      <div class="songs-modal-item">
+        ${s.thumbnail
+          ? `<img src="${s.thumbnail}" alt="" class="smi-thumb">`
+          : '<div class="smi-thumb smi-thumb-ph">🚫</div>'
+        }
+        <div class="smi-info">
+          <div class="smi-title">${s.title}</div>
+          <div class="smi-id">${s.videoId}</div>
+        </div>
+        <a class="btn-sm btn-ghost" href="https://www.youtube.com/watch?v=${s.videoId}" target="_blank" title="Ver en YouTube">▶</a>
+      </div>
+    `).join('')
+  } else {
+    list.innerHTML = `<p class="empty-msg">Sin detalle disponible</p>`
+  }
+
+  document.getElementById('blockedImportModal').classList.add('open')
+}
+
+function closeBlockedImportModal() {
+  document.getElementById('blockedImportModal').classList.remove('open')
 }
 
 // ─── REPORTE DIARIO ───────────────────────────────────────────────────────────
@@ -756,18 +808,6 @@ async function loadBlocked() {
     badge.style.display    = 'inline-flex'
     clearBtn.style.display = 'inline-flex'
 
-    const videoPlaylistMap = {}
-    for (const pl of allPlaylists) {
-      try {
-        const r = await fetch(`/playlists/${pl.id}/songs`)
-        const songs = await r.json()
-        songs.forEach(s => {
-          if (!videoPlaylistMap[s.videoId]) videoPlaylistMap[s.videoId] = []
-          videoPlaylistMap[s.videoId].push({ id: pl.id, name: pl.name })
-        })
-      } catch (e) {}
-    }
-
     el.innerHTML = list.map(v => {
       const playlists = videoPlaylistMap[v.videoId] || []
       const playlistTags = playlists.map(pl => `
@@ -812,8 +852,11 @@ async function removeSongFromPlaylistAndBlocked(playlistId, videoId, title) {
     const data = await res.json()
     if (data.ok) {
       showToast(`"${title}" eliminada de la playlist`)
+      // Actualizar cache sin recargar todo
+      if (videoPlaylistMap[videoId]) {
+        videoPlaylistMap[videoId] = videoPlaylistMap[videoId].filter(p => p.id !== playlistId)
+      }
       loadBlocked()
-      loadPlaylists()
     } else {
       showToast(data.error || 'Error eliminando', true)
     }
@@ -958,6 +1001,7 @@ async function saveCover() {
 document.addEventListener('click', e => {
   if (e.target === document.getElementById('coverModal')) closeCoverModal()
   if (e.target === document.getElementById('songsModal')) closeSongsModal()
+  if (e.target === document.getElementById('blockedImportModal')) closeBlockedImportModal()
 })
 
 // ─── MODAL: VER Y ELIMINAR CANCIONES DE PLAYLIST ─────────────────────────────
