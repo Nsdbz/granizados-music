@@ -154,17 +154,39 @@
             <span class="badge badge-purple" id="playlistBadge">0</span>
           </div>
         </div>
-        <div class="card-sub">Actívalas o desactívalas. Selecciona varias para combinar.</div>
 
-        <div class="search-row">
-          <input type="text" class="search-input" id="plSearchInput"
-            placeholder="Buscar playlist..."
-            oninput="filterPlaylists()"/>
+        <!-- Tabs -->
+        <div class="tab-row" style="margin-bottom:10px">
+          <button id="tabPlaylists" class="tab-btn active" onclick="switchPlTab('playlists')">🎵 Playlists</button>
+          <button id="tabSongSearch" class="tab-btn" onclick="switchPlTab('songs')">🔍 Buscar canción</button>
         </div>
 
-        <div id="playlistsList">
-          <p class="empty-msg">No hay playlists. Agrega una arriba.</p>
+        <!-- Panel: Playlists -->
+        <div id="panelPlaylists">
+          <div class="card-sub" style="margin-bottom:8px">Actívalas o desactívalas. Selecciona varias para combinar.</div>
+          <div class="search-row">
+            <input type="text" class="search-input" id="plSearchInput"
+              placeholder="Buscar playlist..."
+              oninput="filterPlaylists()"/>
+          </div>
+          <div id="playlistsList">
+            <p class="empty-msg">No hay playlists. Agrega una arriba.</p>
+          </div>
         </div>
+
+        <!-- Panel: Buscar canción en playlists -->
+        <div id="panelSongSearch" style="display:none">
+          <div class="card-sub" style="margin-bottom:8px">Busca una canción en todas las playlists y elimínala.</div>
+          <div class="search-row">
+            <input type="text" class="search-input" id="plSongSearchInput"
+              placeholder="Nombre de la canción..."
+              oninput="searchSongsInPlaylists()"/>
+          </div>
+          <div id="plSongSearchResults">
+            <p class="empty-msg" style="padding:14px 0">Escribe para buscar...</p>
+          </div>
+        </div>
+
       </div>
 
     </div>

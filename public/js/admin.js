@@ -28,6 +28,96 @@ function init() {
   setInterval(loadBlocked, 15000)
 }
 
+// ─── TAB PLAYLISTS / BUSCAR CANCIÓN ──────────────────────────────────────────
+
+function switchPlTab(tab) {
+  const isPlaylists = tab === 'playlists'
+  document.getElementById('panelPlaylists').style.display  = isPlaylists ? '' : 'none'
+  document.getElementById('panelSongSearch').style.display = isPlaylists ? 'none' : ''
+  document.getElementById('tabPlaylists').className  = 'tab-btn' + (isPlaylists ? ' active' : '')
+  document.getElementById('tabSongSearch').className = 'tab-btn' + (isPlaylists ? '' : ' active')
+  if (!isPlaylists) {
+    setTimeout(() => document.getElementById('plSongSearchInput').focus(), 50)
+  }
+}
+
+// ─── BUSCAR CANCIÓN EN TODAS LAS PLAYLISTS ────────────────────────────────────
+
+let _songSearchTimer = null
+
+function searchSongsInPlaylists() {
+  clearTimeout(_songSearchTimer)
+  const q = document.getElementById('plSongSearchInput').value.trim()
+  const el = document.getElementById('plSongSearchResults')
+
+  if (!q) {
+    el.innerHTML = '<p class="empty-msg" style="padding:14px 0">Escribe para buscar...</p>'
+    return
+  }
+
+  el.innerHTML = '<p class="loading-msg" style="padding:14px 0">Buscando...</p>'
+
+  _songSearchTimer = setTimeout(async () => {
+    try {
+      const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const results = []
+
+      for (const pl of allPlaylists) {
+        const res   = await fetch(`/playlists/${pl.id}/songs`)
+        const songs = await res.json()
+        for (const s of songs) {
+          const title = s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          if (title.includes(norm)) {
+            results.push({ ...s, playlistId: pl.id, playlistName: pl.name })
+          }
+        }
+      }
+
+      if (!results.length) {
+        el.innerHTML = '<p class="empty-msg" style="padding:14px 0">No se encontraron canciones</p>'
+        return
+      }
+
+      el.innerHTML = results.map(r => `
+        <div class="songs-modal-item" id="psr-${r.playlistId}-${r.videoId}">
+          ${r.thumbnail
+            ? `<img src="${r.thumbnail}" alt="" class="smi-thumb">`
+            : '<div class="smi-thumb smi-thumb-ph">🎵</div>'
+          }
+          <div class="smi-info">
+            <div class="smi-title">${r.title}</div>
+            <div class="smi-id">📂 ${r.playlistName}</div>
+          </div>
+          <button class="btn-sm btn-danger smi-del"
+            onclick="deleteSongFromPlaylistInline('${esc(r.playlistId)}','${esc(r.videoId)}','${esc(r.title)}')"
+            title="Eliminar de la playlist">✕</button>
+        </div>
+      `).join('')
+    } catch (e) {
+      el.innerHTML = '<p class="empty-msg" style="padding:14px 0">Error al buscar</p>'
+    }
+  }, 400)
+}
+
+async function deleteSongFromPlaylistInline(playlistId, videoId, title) {
+  if (!confirm(`¿Eliminar "${title}" de la playlist?`)) return
+  try {
+    const res  = await fetch(`/admin/playlists/${playlistId}/songs/${videoId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`"${title}" eliminada`)
+      document.getElementById(`psr-${playlistId}-${videoId}`)?.remove()
+      const el = document.getElementById('plSongSearchResults')
+      if (!el.children.length) {
+        el.innerHTML = '<p class="empty-msg" style="padding:14px 0">No se encontraron canciones</p>'
+      }
+      loadPlaylists()
+    } else {
+      showToast(data.error || 'Error eliminando', true)
+    }
+  } catch (e) { showToast('Error de conexión', true) }
+}
+
 // ─── TAB BUSCAR / URL ─────────────────────────────────────────────────────────
 
 function switchAddTab(tab) {
