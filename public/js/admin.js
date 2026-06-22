@@ -445,7 +445,6 @@ async function loadPlaylists() {
     allPlaylists = await res.json()
     renderPlaylists(allPlaylists)
     document.getElementById('playlistBadge').textContent = allPlaylists.length
-    // Refrescar opciones del select de fondo también
     loadBgPlaylist()
   } catch (e) {}
 }
@@ -747,6 +746,8 @@ async function loadQueue() {
         <div class="q-info">
           <div class="q-title">${v.title}</div>
         </div>
+        <button class="btn-sm btn-ghost" title="Guardar en playlist"
+          onclick="openAddToPlaylist('${esc(v.videoId)}','${esc(v.title)}','${esc(v.thumbnail||'')}')">＋</button>
         <button class="btn-sm btn-danger" onclick="removeFromQueue('${v.id}')">✕</button>
       </div>
     `).join('') + '</div>'
