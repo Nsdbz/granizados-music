@@ -311,6 +311,27 @@
     </div>
   </div>
 
+  <!-- Modal: ver y eliminar canciones de playlist -->
+  <div class="modal-overlay" id="songsModal">
+    <div class="modal modal-songs">
+      <div class="modal-songs-header">
+        <div>
+          <div class="modal-title" id="songsModalTitle">Canciones</div>
+          <div class="modal-sub" id="songsModalSub"></div>
+        </div>
+        <button class="modal-close" onclick="closeSongsModal()">✕</button>
+      </div>
+      <div class="search-row" style="margin:0 0 10px">
+        <input type="text" class="search-input" id="songsModalSearch"
+          placeholder="Buscar en la playlist..."
+          oninput="filterModalSongs()"/>
+      </div>
+      <div class="songs-modal-list" id="songsModalList">
+        <p class="loading-msg">Cargando canciones...</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: editar portada de playlist -->
   <div class="modal-overlay" id="coverModal">
     <div class="modal">

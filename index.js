@@ -417,6 +417,21 @@ app.post('/admin/playlists/merge', adminAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
+app.delete('/admin/playlists/:id/songs/:videoId', adminAuth, async (req, res) => {
+  try {
+    const playlists = await getPlaylists()
+    const playlist = playlists.find(p => p.id === req.params.id)
+    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+    const songs = await getPlaylistSongs(req.params.id)
+    const newSongs = songs.filter(s => s.videoId !== req.params.videoId)
+    if (newSongs.length === songs.length) return res.status(404).json({ error: 'Canción no encontrada' })
+    playlist.total = newSongs.length
+    await savePlaylists(playlists)
+    await savePlaylistSongs(req.params.id, newSongs)
+    res.json({ ok: true, total: newSongs.length })
+  } catch (error) { res.status(500).json({ error: error.message }) }
+})
+
 app.post('/admin/playlists/:id/songs', adminAuth, async (req, res) => {
   const { videoId, title, thumbnail } = req.body
   if (!videoId || !title) return res.status(400).json({ error: 'Faltan datos de la canción' })

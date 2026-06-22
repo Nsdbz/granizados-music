@@ -402,6 +402,8 @@ function renderPlaylists(playlists) {
         <div class="pl-actions">
           <button class="btn-sm ${isActive ? 'btn-toggle-on' : 'btn-toggle-off'}"
             onclick="togglePlaylist('${pl.id}','${esc(pl.name)}')">${isActive ? '● ON' : '○ OFF'}</button>
+          <button class="btn-sm btn-ghost" title="Ver y eliminar canciones"
+            onclick="openSongsModal('${pl.id}','${esc(pl.name)}',${pl.total})">🎵</button>
           <button class="btn-sm btn-danger"
             onclick="deletePlaylist('${pl.id}','${esc(pl.name)}')">✕</button>
         </div>
@@ -753,4 +755,77 @@ async function saveCover() {
 // Cerrar modal de portada al click fuera
 document.addEventListener('click', e => {
   if (e.target === document.getElementById('coverModal')) closeCoverModal()
+  if (e.target === document.getElementById('songsModal')) closeSongsModal()
 })
+
+// ─── MODAL: VER Y ELIMINAR CANCIONES DE PLAYLIST ─────────────────────────────
+
+let songsModalPlaylistId = null
+let songsModalAll = []
+
+async function openSongsModal(playlistId, name, total) {
+  songsModalPlaylistId = playlistId
+  songsModalAll = []
+  document.getElementById('songsModalTitle').textContent = name
+  document.getElementById('songsModalSub').textContent = `${total} canciones`
+  document.getElementById('songsModalSearch').value = ''
+  document.getElementById('songsModalList').innerHTML = '<p class="loading-msg">Cargando canciones...</p>'
+  document.getElementById('songsModal').classList.add('open')
+
+  try {
+    const res = await fetch(`/playlists/${playlistId}/songs`)
+    songsModalAll = await res.json()
+    renderModalSongs(songsModalAll)
+  } catch (e) {
+    document.getElementById('songsModalList').innerHTML = '<p class="empty-msg">Error cargando canciones</p>'
+  }
+}
+
+function closeSongsModal() {
+  document.getElementById('songsModal').classList.remove('open')
+  songsModalPlaylistId = null
+  songsModalAll = []
+}
+
+function filterModalSongs() {
+  const q = document.getElementById('songsModalSearch').value.toLowerCase().trim()
+  renderModalSongs(q ? songsModalAll.filter(s => s.title.toLowerCase().includes(q)) : songsModalAll)
+}
+
+function renderModalSongs(songs) {
+  const el = document.getElementById('songsModalList')
+  if (!songs.length) {
+    el.innerHTML = '<p class="empty-msg">No se encontraron canciones</p>'
+    return
+  }
+  el.innerHTML = songs.map(s => `
+    <div class="songs-modal-item" id="smi-${s.videoId}">
+      ${s.thumbnail
+        ? `<img src="${s.thumbnail}" alt="" class="smi-thumb">`
+        : '<div class="smi-thumb smi-thumb-ph">🎵</div>'
+      }
+      <div class="smi-info">
+        <div class="smi-title">${s.title}</div>
+        <div class="smi-id">${s.videoId}</div>
+      </div>
+      <button class="btn-sm btn-danger smi-del" onclick="deleteSongFromPlaylist('${s.videoId}','${esc(s.title)}')" title="Eliminar canción">✕</button>
+    </div>
+  `).join('')
+}
+
+async function deleteSongFromPlaylist(videoId, title) {
+  if (!confirm(`¿Eliminar "${title}" de la playlist?`)) return
+  try {
+    const res  = await fetch(`/admin/playlists/${songsModalPlaylistId}/songs/${videoId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`"${title}" eliminada`)
+      songsModalAll = songsModalAll.filter(s => s.videoId !== videoId)
+      document.getElementById('songsModalSub').textContent = `${songsModalAll.length} canciones`
+      filterModalSongs()
+      loadPlaylists()
+    } else {
+      showToast(data.error || 'Error eliminando', true)
+    }
+  } catch (e) { showToast('Error de conexión', true) }
+}
