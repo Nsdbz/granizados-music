@@ -43,14 +43,50 @@ function switchPlTab(tab) {
 
 // ─── BUSCAR CANCIÓN EN TODAS LAS PLAYLISTS ────────────────────────────────────
 
+// Normaliza un string: minúsculas, sin acentos, sin caracteres especiales
+function normalizeSong(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Devuelve un score de relevancia >= 0, o -1 si no hay match
+function scoreSongMatch(title, queryWords) {
+  const normTitle  = normalizeSong(title)
+  const titleWords = normTitle.split(' ')
+
+  // Todas las palabras del query deben aparecer en el título
+  for (const qw of queryWords) {
+    if (!normTitle.includes(qw)) return -1
+  }
+
+  let score = 0
+
+  for (const qw of queryWords) {
+    if (titleWords.some(tw => tw.startsWith(qw))) score += 30  // palabra empieza igual
+    if (normTitle.startsWith(qw))                 score += 10  // título empieza con el término
+    if (titleWords.includes(qw))                  score += 20  // coincidencia exacta de palabra
+  }
+
+  // Bonus si la frase completa aparece junta
+  const fullQuery = queryWords.join(' ')
+  if (normTitle.includes(fullQuery)) score += 50
+
+  return score
+}
+
 let _songSearchTimer = null
 
 function searchSongsInPlaylists() {
   clearTimeout(_songSearchTimer)
-  const q = document.getElementById('plSongSearchInput').value.trim()
-  const el = document.getElementById('plSongSearchResults')
+  const raw = document.getElementById('plSongSearchInput').value.trim()
+  const el  = document.getElementById('plSongSearchResults')
 
-  if (!q) {
+  if (!raw) {
     el.innerHTML = '<p class="empty-msg" style="padding:14px 0">Escribe para buscar...</p>'
     return
   }
@@ -59,26 +95,34 @@ function searchSongsInPlaylists() {
 
   _songSearchTimer = setTimeout(async () => {
     try {
-      const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      const results = []
+      const queryWords = normalizeSong(raw).split(' ').filter(Boolean)
+      if (!queryWords.length) {
+        el.innerHTML = '<p class="empty-msg" style="padding:14px 0">Escribe para buscar...</p>'
+        return
+      }
+
+      const scored = []
 
       for (const pl of allPlaylists) {
         const res   = await fetch(`/playlists/${pl.id}/songs`)
         const songs = await res.json()
         for (const s of songs) {
-          const title = s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          if (title.includes(norm)) {
-            results.push({ ...s, playlistId: pl.id, playlistName: pl.name })
+          const score = scoreSongMatch(s.title, queryWords)
+          if (score >= 0) {
+            scored.push({ ...s, playlistId: pl.id, playlistName: pl.name, score })
           }
         }
       }
 
-      if (!results.length) {
+      // Ordenar por relevancia descendente
+      scored.sort((a, b) => b.score - a.score)
+
+      if (!scored.length) {
         el.innerHTML = '<p class="empty-msg" style="padding:14px 0">No se encontraron canciones</p>'
         return
       }
 
-      el.innerHTML = results.map(r => `
+      el.innerHTML = scored.map(r => `
         <div class="songs-modal-item" id="psr-${r.playlistId}-${r.videoId}">
           ${r.thumbnail
             ? `<img src="${r.thumbnail}" alt="" class="smi-thumb">`
@@ -687,26 +731,69 @@ async function loadBlocked() {
     badge.style.display    = 'inline-flex'
     clearBtn.style.display = 'inline-flex'
 
-    el.innerHTML = list.map(v => `
-      <div class="blocked-item">
-        ${v.thumbnail
-          ? `<img src="${v.thumbnail}" alt="" style="width:52px;height:37px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)">`
-          : '<div class="q-thumb-ph" style="width:52px;height:37px">🎵</div>'
-        }
-        <div style="flex:1;min-width:0">
-          <div class="blocked-title">${v.title}</div>
-          <div class="blocked-meta">
-            ${v.videoId}${v.errorCode != null ? ` · código ${v.errorCode}` : ''} · ${timeAgo(v.blockedAt)}
+    // Buscar en qué playlist(s) está cada video bloqueado
+    const videoPlaylistMap = {}  // videoId -> [{ id, name }]
+    for (const pl of allPlaylists) {
+      try {
+        const r = await fetch(`/playlists/${pl.id}/songs`)
+        const songs = await r.json()
+        songs.forEach(s => {
+          if (!videoPlaylistMap[s.videoId]) videoPlaylistMap[s.videoId] = []
+          videoPlaylistMap[s.videoId].push({ id: pl.id, name: pl.name })
+        })
+      } catch (e) {}
+    }
+
+    el.innerHTML = list.map(v => {
+      const playlists = videoPlaylistMap[v.videoId] || []
+      const playlistTags = playlists.map(pl => `
+        <span class="blocked-pl-tag">
+          📂 ${pl.name}
+          <button class="blocked-pl-remove" title="Eliminar de ${pl.name}"
+            onclick="removeSongFromPlaylistAndBlocked('${pl.id}','${esc(v.videoId)}','${esc(v.title)}')">✕</button>
+        </span>
+      `).join('')
+
+      return `
+        <div class="blocked-item">
+          ${v.thumbnail
+            ? `<img src="${v.thumbnail}" alt="" style="width:52px;height:37px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)">`
+            : '<div class="q-thumb-ph" style="width:52px;height:37px">🎵</div>'
+          }
+          <div style="flex:1;min-width:0">
+            <div class="blocked-title">${v.title}</div>
+            <div class="blocked-meta">
+              ${v.videoId}${v.errorCode != null ? ` · código ${v.errorCode}` : ''} · ${timeAgo(v.blockedAt)}
+            </div>
+            ${playlists.length
+              ? `<div class="blocked-pl-tags">${playlistTags}</div>`
+              : '<div class="blocked-meta" style="margin-top:3px;color:var(--muted)">No está en ninguna playlist</div>'
+            }
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0">
+            <button class="btn-sm btn-ghost" title="Abrir en YouTube"
+              onclick="window.open('https://www.youtube.com/watch?v=${v.videoId}','_blank')">▶</button>
+            <button class="btn-sm btn-danger" onclick="removeBlocked('${v.videoId}')">✕</button>
           </div>
         </div>
-        <div style="display:flex;gap:5px;flex-shrink:0">
-          <button class="btn-sm btn-ghost" title="Abrir en YouTube"
-            onclick="window.open('https://www.youtube.com/watch?v=${v.videoId}','_blank')">▶</button>
-          <button class="btn-sm btn-danger" onclick="removeBlocked('${v.videoId}')">✕</button>
-        </div>
-      </div>
-    `).join('')
+      `
+    }).join('')
   } catch (e) {}
+}
+
+async function removeSongFromPlaylistAndBlocked(playlistId, videoId, title) {
+  if (!confirm(`¿Eliminar "${title}" de la playlist?`)) return
+  try {
+    const res = await fetch(`/admin/playlists/${playlistId}/songs/${videoId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`"${title}" eliminada de la playlist`)
+      loadBlocked()
+      loadPlaylists()
+    } else {
+      showToast(data.error || 'Error eliminando', true)
+    }
+  } catch (e) { showToast('Error de conexión', true) }
 }
 
 async function removeBlocked(videoId) {
