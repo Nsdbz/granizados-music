@@ -41,13 +41,86 @@ function switchPlTab(tab) {
   }
 }
 
+// ─── MOTOR DE BÚSQUEDA FUZZY ──────────────────────────────────────────────────
+
+function normalizeStr(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')   // quitar acentos
+    .replace(/[^a-z0-9\s]/g, ' ')     // solo alfanumérico
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Distancia de Levenshtein — para detectar typos en palabras cortas
+function levenshtein(a, b) {
+  if (a === b) return 0
+  if (a.length === 0) return b.length
+  if (b.length === 0) return a.length
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i])
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[a.length][b.length]
+}
+
+// Determina si una palabra de búsqueda "matchea" una palabra del título,
+// con tolerancia a typos proporcional a la longitud de la palabra.
+function wordMatches(queryWord, titleWord) {
+  if (titleWord.includes(queryWord)) return true
+  const len = queryWord.length
+  if (len <= 3) return false          // palabras muy cortas: solo exacto
+  const maxDist = len <= 5 ? 1 : 2   // 1 typo hasta 5 chars, 2 typos si es más larga
+  return levenshtein(queryWord, titleWord) <= maxDist
+}
+
+// Puntúa qué tan bien coincide un título con las palabras de búsqueda.
+// Devuelve -1 si no hay match suficiente.
+function scoreFuzzyMatch(title, queryWords) {
+  const normTitle  = normalizeStr(title)
+  const titleWords = normTitle.split(' ')
+
+  // Cada palabra de la query debe matchear al menos una palabra del título
+  for (const qw of queryWords) {
+    const hits = titleWords.some(tw => wordMatches(qw, tw))
+    if (!hits) return -1
+  }
+
+  let score = 0
+
+  for (const qw of queryWords) {
+    for (const tw of titleWords) {
+      if (tw === qw)              { score += 40; break }  // coincidencia exacta de palabra
+      if (tw.startsWith(qw))     { score += 30; break }  // empieza igual
+      if (tw.includes(qw))       { score += 20; break }  // contiene
+      if (wordMatches(qw, tw))   { score += 10; break }  // fuzzy (typo tolerado)
+    }
+  }
+
+  // Bonus si la frase completa aparece en orden
+  const fullQuery = queryWords.join(' ')
+  if (normTitle.includes(fullQuery))          score += 50
+  if (normTitle.startsWith(fullQuery))        score += 20
+
+  // Penalizar títulos muy largos (resultados más específicos primero)
+  score -= Math.floor(titleWords.length / 5)
+
+  return score
+}
+
 // ─── BUSCAR CANCIÓN EN TODAS LAS PLAYLISTS ────────────────────────────────────
 
 let _songSearchTimer = null
 
 function searchSongsInPlaylists() {
   clearTimeout(_songSearchTimer)
-  const q = document.getElementById('plSongSearchInput').value.trim()
+  const q  = document.getElementById('plSongSearchInput').value.trim()
   const el = document.getElementById('plSongSearchResults')
 
   if (!q) {
@@ -59,26 +132,29 @@ function searchSongsInPlaylists() {
 
   _songSearchTimer = setTimeout(async () => {
     try {
-      const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      const results = []
+      const queryWords = normalizeStr(q).split(' ').filter(Boolean)
+      const scored     = []
 
       for (const pl of allPlaylists) {
         const res   = await fetch(`/playlists/${pl.id}/songs`)
         const songs = await res.json()
         for (const s of songs) {
-          const title = s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          if (title.includes(norm)) {
-            results.push({ ...s, playlistId: pl.id, playlistName: pl.name })
+          const score = scoreFuzzyMatch(s.title, queryWords)
+          if (score >= 0) {
+            scored.push({ ...s, playlistId: pl.id, playlistName: pl.name, score })
           }
         }
       }
 
-      if (!results.length) {
+      // Ordenar por score descendente; mismo score → alfabético
+      scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+
+      if (!scored.length) {
         el.innerHTML = '<p class="empty-msg" style="padding:14px 0">No se encontraron canciones</p>'
         return
       }
 
-      el.innerHTML = results.map(r => `
+      el.innerHTML = scored.map(r => `
         <div class="songs-modal-item" id="psr-${r.playlistId}-${r.videoId}">
           ${r.thumbnail
             ? `<img src="${r.thumbnail}" alt="" class="smi-thumb">`
@@ -597,7 +673,6 @@ async function addPlaylist() {
     const res  = await fetch('/admin/playlists', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // Enviamos cover junto con url y name para guardarlo al crear
       body: JSON.stringify({ url, name, cover: cover || null })
     })
     const data = await res.json()
@@ -615,13 +690,7 @@ async function addPlaylist() {
   }
 }
 
-// ─── REPORTE DIARIO (collapsable, solo peticiones de usuarios) ───────────────
-//
-// NOTA PARA EL BACKEND:
-// El endpoint /admin/reports debe devolver únicamente las canciones solicitadas
-// por usuarios vía POST /request. Las canciones añadidas manualmente por el
-// admin vía /admin/add-to-queue NO deben contabilizarse en estos reportes.
-// Cada objeto del array debe tener: { date: "2024-01-15", totalRequests: 42 }
+// ─── REPORTE DIARIO ───────────────────────────────────────────────────────────
 
 function toggleReport() {
   reportOpen = !reportOpen
@@ -687,8 +756,7 @@ async function loadBlocked() {
     badge.style.display    = 'inline-flex'
     clearBtn.style.display = 'inline-flex'
 
-    // Buscar en qué playlist(s) está cada video bloqueado
-    const videoPlaylistMap = {}  // videoId -> [{ id, name }]
+    const videoPlaylistMap = {}
     for (const pl of allPlaylists) {
       try {
         const r = await fetch(`/playlists/${pl.id}/songs`)
