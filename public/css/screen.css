@@ -125,6 +125,9 @@ html, body {
   0%, 80%, 100% { opacity: .2; transform: scale(.8); }
   40%            { opacity: 1;  transform: scale(1.2); }
 }
+
+/* ─── MARCA DE AGUA ──────────────────────────────────────────────────────────── */
+
 .brand-watermark {
   position: fixed;
   bottom: 20px;
@@ -134,4 +137,20 @@ html, body {
   z-index: 50;
   pointer-events: none;
   opacity: 0.85;
+}
+
+/* ─── BOTÓN PANTALLA COMPLETA ─────────────────────────────────────────────────── */
+
+.fs-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  background: rgba(0,0,0,.5);
+  border: none;
+  color: #fff;
+  font-size: 1.3rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
 }

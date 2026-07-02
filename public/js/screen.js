@@ -3,10 +3,19 @@ let currentVideo = null
 let isPlaying = false
 
 function startPlayer() {
+  document.documentElement.requestFullscreen().catch(() => {})
   document.getElementById('startScreen').style.display = 'none'
   document.getElementById('playerScreen').style.display = 'block'
   checkQueue()
   setInterval(checkQueue, 5000)
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {})
+  } else {
+    document.exitFullscreen()
+  }
 }
 
 function onYouTubeIframeAPIReady() {
@@ -19,7 +28,8 @@ function onYouTubeIframeAPIReady() {
       rel: 0,
       playsinline: 1,
       iv_load_policy: 3,
-      modestbranding: 1
+      modestbranding: 1,
+      fs: 0
     },
     events: {
       onReady: () => checkQueue(),
