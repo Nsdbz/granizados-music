@@ -14,29 +14,54 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN
 })
 
+// ─── CACHE EN MEMORIA (reduce lecturas repetidas a Redis, ej. polling de pantalla) ─
+// Se llena "de forma perezosa": la primera lectura después de arrancar el
+// servidor sí consulta Redis; de ahí en adelante responde desde memoria.
+// Toda escritura (save...) actualiza la memoria Y Redis al mismo tiempo,
+// así que el cache nunca queda desincronizado mientras el proceso siga vivo.
+
+const cache = {
+  playlists: null,           // null = aún no cargado desde Redis
+  playlistSongs: {},         // { [playlistId]: songs[] }
+  queue: null,
+  backgroundPlaylistId: undefined  // undefined = aún no cargado, null = cargado y sin valor
+}
+
 // ─── HELPERS DE REDIS ─────────────────────────────────────────────────────────
 
 async function getPlaylists() {
-  try { const saved = await redis.get('playlists'); return saved || [] } catch (e) { return [] }
+  if (cache.playlists !== null) return cache.playlists
+  try { const saved = await redis.get('playlists'); cache.playlists = saved || []; return cache.playlists }
+  catch (e) { return [] }
 }
 
 async function savePlaylists(playlists) {
+  cache.playlists = playlists
   try { await redis.set('playlists', playlists) } catch (e) {}
 }
 
 async function getPlaylistSongs(playlistId) {
-  try { const saved = await redis.get(`playlist:${playlistId}:songs`); return saved || [] } catch (e) { return [] }
+  if (cache.playlistSongs[playlistId] !== undefined) return cache.playlistSongs[playlistId]
+  try {
+    const saved = await redis.get(`playlist:${playlistId}:songs`)
+    cache.playlistSongs[playlistId] = saved || []
+    return cache.playlistSongs[playlistId]
+  } catch (e) { return [] }
 }
 
 async function savePlaylistSongs(playlistId, songs) {
+  cache.playlistSongs[playlistId] = songs
   try { await redis.set(`playlist:${playlistId}:songs`, songs) } catch (e) {}
 }
 
 async function getQueue() {
-  try { const saved = await redis.get('queue'); return saved || [] } catch (e) { return [] }
+  if (cache.queue !== null) return cache.queue
+  try { const saved = await redis.get('queue'); cache.queue = saved || []; return cache.queue }
+  catch (e) { return [] }
 }
 
 async function saveQueue(queue) {
+  cache.queue = queue
   try { await redis.set('queue', queue) } catch (e) {}
 }
 
@@ -129,7 +154,20 @@ async function getAvailableDates() {
 // ─── AUTO PLAYLIST (playlist de fondo o aleatoria entre activas) ─────────────
 
 async function getBackgroundPlaylistId() {
-  try { return await redis.get('background_playlist_id') || null } catch (e) { return null }
+  if (cache.backgroundPlaylistId !== undefined) return cache.backgroundPlaylistId
+  try {
+    const saved = await redis.get('background_playlist_id')
+    cache.backgroundPlaylistId = saved || null
+    return cache.backgroundPlaylistId
+  } catch (e) { return null }
+}
+
+async function saveBackgroundPlaylistId(id) {
+  cache.backgroundPlaylistId = id || null
+  try {
+    if (id) await redis.set('background_playlist_id', id)
+    else await redis.del('background_playlist_id')
+  } catch (e) {}
 }
 
 async function getRandomSongFromPlaylists() {
@@ -357,6 +395,7 @@ app.delete('/admin/playlists/:id', adminAuth, async (req, res) => {
     playlists = playlists.filter(p => p.id !== req.params.id)
     await savePlaylists(playlists)
     await redis.del(`playlist:${req.params.id}:songs`)
+    delete cache.playlistSongs[req.params.id]
     res.json({ ok: true })
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
@@ -601,11 +640,7 @@ app.get('/admin/background-playlist', adminAuth, async (req, res) => {
 app.post('/admin/background-playlist', adminAuth, async (req, res) => {
   try {
     const { id } = req.body
-    if (id) {
-      await redis.set('background_playlist_id', id)
-    } else {
-      await redis.del('background_playlist_id')
-    }
+    await saveBackgroundPlaylistId(id)
     res.json({ ok: true, id: id || null })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
