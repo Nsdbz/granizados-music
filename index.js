@@ -24,7 +24,8 @@ const cache = {
   playlists: null,           // null = aún no cargado desde Redis
   playlistSongs: {},         // { [playlistId]: songs[] }
   queue: null,
-  backgroundPlaylistId: undefined  // undefined = aún no cargado, null = cargado y sin valor
+  backgroundPlaylistId: undefined,  // undefined = aún no cargado, null = cargado y sin valor
+  blockedLog: null           // null = aún no cargado desde Redis
 }
 
 // ─── HELPERS DE REDIS ─────────────────────────────────────────────────────────
@@ -84,7 +85,17 @@ async function saveRequestLog(log) {
 // ─── LOG DE VIDEOS BLOQUEADOS ─────────────────────────────────────────────────
 
 async function getBlockedLog() {
-  try { return await redis.get('blocked_log') || [] } catch (e) { return [] }
+  if (cache.blockedLog !== null) return cache.blockedLog
+  try {
+    const saved = await redis.get('blocked_log')
+    cache.blockedLog = saved || []
+    return cache.blockedLog
+  } catch (e) { return [] }
+}
+
+async function saveBlockedLog(log) {
+  cache.blockedLog = log
+  try { await redis.set('blocked_log', log) } catch (e) {}
 }
 
 async function logBlockedVideo(videoId, title, thumbnail) {
@@ -92,7 +103,7 @@ async function logBlockedVideo(videoId, title, thumbnail) {
     const log = await getBlockedLog()
     if (log.find(v => v.videoId === videoId)) return
     log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
-    await redis.set('blocked_log', log.slice(0, 100))
+    await saveBlockedLog(log.slice(0, 100))
   } catch (e) {}
 }
 
@@ -259,7 +270,7 @@ async function fetchYoutubePlaylist(playlistId) {
     pageToken = response.data.nextPageToken || null
   } while (pageToken)
 
-  // ── Filtrar embeddables en lote ──────────────────────────────────────────
+  // ── Filtrar embeddables y sin restricción regional (Colombia) en lote ────
   const embeddable = []
   const blocked    = []
 
@@ -268,15 +279,23 @@ async function fetchYoutubePlaylist(playlistId) {
     const ids   = batch.map(s => s.videoId).join(',')
     try {
       const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
-        params: { part: 'status', id: ids, key: process.env.YOUTUBE_API_KEY }
+        params: { part: 'status,contentDetails', id: ids, key: process.env.YOUTUBE_API_KEY }
       })
-      const embeddableIds = new Set(
+      const okIds = new Set(
         statusRes.data.items
-          .filter(v => v.status.embeddable === true)
+          .filter(v => {
+            if (v.status.embeddable !== true) return false
+            const rr = v.contentDetails?.regionRestriction
+            if (rr) {
+              if (rr.blocked && rr.blocked.includes('CO')) return false        // bloqueado explícitamente en Colombia
+              if (rr.allowed && !rr.allowed.includes('CO')) return false       // solo permitido en otros países, CO no está
+            }
+            return true
+          })
           .map(v => v.id)
       )
       batch.forEach(song => {
-        if (embeddableIds.has(song.videoId)) embeddable.push(song)
+        if (okIds.has(song.videoId)) embeddable.push(song)
         else blocked.push(song)
       })
     } catch (e) {
@@ -618,13 +637,13 @@ app.get('/admin/blocked', adminAuth, async (req, res) => {
 app.delete('/admin/blocked/:videoId', adminAuth, async (req, res) => {
   try {
     const log = await getBlockedLog()
-    await redis.set('blocked_log', log.filter(v => v.videoId !== req.params.videoId))
+    await saveBlockedLog(log.filter(v => v.videoId !== req.params.videoId))
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 app.delete('/admin/blocked', adminAuth, async (req, res) => {
-  try { await redis.set('blocked_log', []); res.json({ ok: true }) }
+  try { await saveBlockedLog([]); res.json({ ok: true }) }
   catch (e) { res.status(500).json({ error: e.message }) }
 })
 
