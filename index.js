@@ -310,16 +310,66 @@ function createImportJob() {
   return jobId
 }
 
+// Consulta metadatos de YouTube en lotes de 50 (status + restricción regional).
+// Devuelve un Map videoId -> true/false, o null si la consulta falló del todo.
+async function checkVideoStatusBatch(ids) {
+  try {
+    const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'status,contentDetails', id: ids.join(','), key: process.env.YOUTUBE_API_KEY }
+    })
+    const map = new Map()
+    statusRes.data.items.forEach(v => {
+      let ok = v.status.embeddable === true
+      const rr = v.contentDetails?.regionRestriction
+      if (rr) {
+        if (rr.blocked && rr.blocked.includes('CO')) ok = false        // bloqueado explícitamente en Colombia
+        if (rr.allowed && !rr.allowed.includes('CO')) ok = false       // solo permitido en otros países, CO no está
+      }
+      map.set(v.id, ok)
+    })
+    return map
+  } catch (e) {
+    console.log('Error consultando metadatos de YouTube (lote):', e.message)
+    return null
+  }
+}
+
 async function runImportJob(jobId, youtubeId) {
   const job = importJobs[jobId]
   try {
     const songs = await fetchYoutubePlaylistRaw(youtubeId)
     job.total = songs.length
 
+    // Paso 1 — metadatos por lotes: detecta bloqueo regional en Colombia,
+    // que la verificación individual (oembed) no puede ver por sí sola.
+    const metaOk = new Map()
+    for (let i = 0; i < songs.length; i += 50) {
+      const batchIds = songs.slice(i, i + 50).map(s => s.videoId)
+      let map = await checkVideoStatusBatch(batchIds)
+      if (!map) map = await checkVideoStatusBatch(batchIds) // un reintento
+      for (const id of batchIds) {
+        // si el lote sigue fallando o el video no vino en la respuesta,
+        // queda null = "no lo sabemos todavía", lo decide el paso 2
+        metaOk.set(id, map ? (map.has(id) ? map.get(id) : false) : null)
+      }
+    }
+
+    // Paso 2 — verificación individual real (oembed), canción por canción.
     const embeddable = []
     const blocked = []
 
     for (const song of songs) {
+      const metaStatus = metaOk.get(song.videoId)
+
+      if (metaStatus === false) {
+        // ya sabemos por metadatos que está bloqueado (ej. restringido en CO):
+        // no hace falta gastar otra consulta
+        blocked.push(song)
+        await logBlockedVideo(song.videoId, song.title, song.thumbnail)
+        job.checked++
+        continue
+      }
+
       const ok = await canEmbed(song.videoId)
       if (ok) {
         embeddable.push(song)
