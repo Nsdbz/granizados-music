@@ -680,8 +680,15 @@ async function addPlaylist() {
 
   if (!url || !name) { showToast('Completa el link y el nombre', true); return }
 
-  document.getElementById('loadProgress').style.display = 'block'
-  document.querySelector('[onclick="addPlaylist()"]').disabled = true
+  const progressWrap = document.getElementById('loadProgress')
+  const progressText = document.getElementById('loadProgressText')
+  const progressFill = document.getElementById('loadProgressFill')
+  const btn = document.querySelector('[onclick="addPlaylist()"]')
+
+  progressWrap.style.display = 'block'
+  progressText.textContent = 'Cargando lista de la playlist...'
+  progressFill.style.width = '0%'
+  btn.disabled = true
 
   try {
     const res  = await fetch('/admin/playlists', {
@@ -690,23 +697,56 @@ async function addPlaylist() {
       body: JSON.stringify({ url, name, cover: cover || null })
     })
     const data = await res.json()
-    if (data.ok) {
-      document.getElementById('playlistUrl').value  = ''
-      document.getElementById('playlistName').value = ''
-      clearNewCover()
-      loadPlaylists()
+    if (!data.ok) { showToast(data.error, true); return }
 
-      if (data.skipped > 0) {
-        showBlockedImportAlert(name, data.total, data.skipped, data.blockedSongs || [])
-      } else {
-        showToast(`✅ "${name}" — ${data.total} canciones`)
-      }
-    } else showToast(data.error, true)
+    // A partir de aquí, el servidor verifica cada canción una por una en
+    // segundo plano. Consultamos el progreso cada 1.5s hasta que termine.
+    const result = await pollImportProgress(data.jobId, progressText, progressFill)
+
+    if (result.error) { showToast(result.error, true); return }
+
+    document.getElementById('playlistUrl').value  = ''
+    document.getElementById('playlistName').value = ''
+    clearNewCover()
+    loadPlaylists()
+
+    const total = result.total - result.skipped
+    if (result.skipped > 0) {
+      showBlockedImportAlert(name, total, result.skipped, result.blockedSongs || [])
+    } else {
+      showToast(`✅ "${name}" — ${total} canciones`)
+    }
   } catch (e) { showToast('Error de conexión', true) }
   finally {
-    document.getElementById('loadProgress').style.display = 'none'
-    document.querySelector('[onclick="addPlaylist()"]').disabled = false
+    progressWrap.style.display = 'none'
+    btn.disabled = false
   }
+}
+
+// Pregunta el progreso de una importación cada 1.5s hasta que el job termine.
+function pollImportProgress(jobId, progressText, progressFill) {
+  return new Promise(resolve => {
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/admin/playlists/import-status/${jobId}`)
+        const job = await res.json()
+
+        if (job.total > 0) {
+          const pct = Math.round((job.checked / job.total) * 100)
+          progressText.textContent = `Verificando canciones... ${job.checked}/${job.total}`
+          progressFill.style.width = `${pct}%`
+        }
+
+        if (job.done) {
+          clearInterval(timer)
+          resolve(job)
+        }
+      } catch (e) {
+        clearInterval(timer)
+        resolve({ error: 'Se perdió la conexión durante la importación' })
+      }
+    }, 1500)
+  })
 }
 
 // ─── ALERTA DE VIDEOS BLOQUEADOS AL IMPORTAR ─────────────────────────────────

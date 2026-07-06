@@ -251,7 +251,8 @@ async function canEmbed(videoId) {
   }
 }
 
-async function fetchYoutubePlaylist(playlistId) {
+// Solo trae la lista de la playlist de YouTube, sin verificar nada todavía.
+async function fetchYoutubePlaylistRaw(playlistId) {
   let songs = []
   let pageToken = null
 
@@ -270,43 +271,62 @@ async function fetchYoutubePlaylist(playlistId) {
     pageToken = response.data.nextPageToken || null
   } while (pageToken)
 
-  // ── Filtrar embeddables y sin restricción regional (Colombia) en lote ────
-  const embeddable = []
-  const blocked    = []
-
-  for (let i = 0; i < songs.length; i += 50) {
-    const batch = songs.slice(i, i + 50)
-    const ids   = batch.map(s => s.videoId).join(',')
-    try {
-      const statusRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
-        params: { part: 'status,contentDetails', id: ids, key: process.env.YOUTUBE_API_KEY }
-      })
-      const okIds = new Set(
-        statusRes.data.items
-          .filter(v => {
-            if (v.status.embeddable !== true) return false
-            const rr = v.contentDetails?.regionRestriction
-            if (rr) {
-              if (rr.blocked && rr.blocked.includes('CO')) return false        // bloqueado explícitamente en Colombia
-              if (rr.allowed && !rr.allowed.includes('CO')) return false       // solo permitido en otros países, CO no está
-            }
-            return true
-          })
-          .map(v => v.id)
-      )
-      batch.forEach(song => {
-        if (okIds.has(song.videoId)) embeddable.push(song)
-        else blocked.push(song)
-      })
-    } catch (e) {
-      console.log('Error verificando embedding del lote:', e.message)
-      embeddable.push(...batch)
-    }
-  }
-
-  console.log(`Playlist: ${songs.length} totales, ${embeddable.length} embeddables, ${blocked.length} bloqueados`)
-  return { embeddable, blocked }
+  return songs
 }
+
+// ─── IMPORTACIÓN EN SEGUNDO PLANO (verifica cada canción una por una) ────────
+// Los jobs viven solo en memoria: si el servidor se reinicia a mitad de una
+// importación se pierde el progreso, pero la playlist solo se guarda en Redis
+// al terminar, así que nunca queda una playlist a medias guardada.
+
+const importJobs = {}
+const PAUSE_BETWEEN_CHECKS_MS = 150 // margen de seguridad frente a oEmbed
+
+function createImportJob() {
+  const jobId = `imp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+  importJobs[jobId] = { total: 0, checked: 0, done: false, error: null, result: null, playlistId: null }
+  return jobId
+}
+
+async function runImportJob(jobId, youtubeId) {
+  const job = importJobs[jobId]
+  try {
+    const songs = await fetchYoutubePlaylistRaw(youtubeId)
+    job.total = songs.length
+
+    const embeddable = []
+    const blocked = []
+
+    for (const song of songs) {
+      const ok = await canEmbed(song.videoId)
+      if (ok) {
+        embeddable.push(song)
+      } else {
+        blocked.push(song)
+        await logBlockedVideo(song.videoId, song.title, song.thumbnail)
+      }
+      job.checked++
+      await new Promise(r => setTimeout(r, PAUSE_BETWEEN_CHECKS_MS))
+    }
+
+    console.log(`Playlist ${youtubeId}: ${songs.length} totales, ${embeddable.length} embeddables, ${blocked.length} bloqueados`)
+    job.result = { embeddable, blocked }
+  } catch (e) {
+    console.log('Error en importación en segundo plano:', e.message)
+    job.error = e.message || 'No se pudo importar la playlist'
+  } finally {
+    job.done = true
+  }
+}
+
+// Limpia jobs viejos ya terminados para no acumular memoria indefinidamente
+setInterval(() => {
+  const now = Date.now()
+  for (const id in importJobs) {
+    const createdAt = Number(id.split('_')[1]) || 0
+    if (importJobs[id].done && now - createdAt > 30 * 60 * 1000) delete importJobs[id]
+  }
+}, 10 * 60 * 1000)
 
 // ─── ADMIN: INFO DE VIDEO POR ID ─────────────────────────────────────────────
 
@@ -394,18 +414,54 @@ app.post('/admin/playlists', adminAuth, async (req, res) => {
   let playlistId = url
   const match = url.match(/[?&]list=([^&]+)/)
   if (match) playlistId = match[1]
+
   try {
-    const { embeddable, blocked } = await fetchYoutubePlaylist(playlistId)
-    if (!embeddable.length) return res.status(400).json({ error: 'No se encontraron videos reproducibles en esa playlist (todos tienen restricción de embedding)' })
     const playlists = await getPlaylists()
-    const exists = playlists.find(p => p.youtubeId === playlistId)
-    if (exists) return res.status(400).json({ error: 'Esa playlist ya está agregada' })
-    const id = `pl_${Date.now()}`
-    playlists.push({ id, youtubeId: playlistId, name, cover: cover || null, total: embeddable.length, active: true, createdAt: Date.now() })
-    await savePlaylists(playlists)
-    await savePlaylistSongs(id, embeddable)
-    res.json({ ok: true, name, total: embeddable.length, skipped: blocked.length, blockedSongs: blocked })
-  } catch (error) { res.status(500).json({ error: 'No se pudo cargar la playlist. Verifica que sea pública.' }) }
+    if (playlists.find(p => p.youtubeId === playlistId)) {
+      return res.status(400).json({ error: 'Esa playlist ya está agregada' })
+    }
+  } catch (error) { return res.status(500).json({ error: error.message }) }
+
+  const jobId = createImportJob()
+  res.json({ ok: true, jobId })
+
+  // A partir de aquí corre en segundo plano; ya se respondió al admin.
+  runImportJob(jobId, playlistId).then(async () => {
+    const job = importJobs[jobId]
+    if (job.error) return
+    const { embeddable, blocked } = job.result
+    if (!embeddable.length) {
+      job.error = 'No se encontraron videos reproducibles en esa playlist (todos tienen restricción de embedding)'
+      return
+    }
+    try {
+      const currentPlaylists = await getPlaylists()
+      if (currentPlaylists.find(p => p.youtubeId === playlistId)) {
+        job.error = 'Esa playlist ya fue agregada'
+        return
+      }
+      const id = `pl_${Date.now()}`
+      currentPlaylists.push({ id, youtubeId: playlistId, name, cover: cover || null, total: embeddable.length, active: true, createdAt: Date.now() })
+      await savePlaylists(currentPlaylists)
+      await savePlaylistSongs(id, embeddable)
+      job.playlistId = id
+    } catch (e) { job.error = e.message }
+  })
+})
+
+// Consultado por el admin cada 1-2s mientras dura la importación
+app.get('/admin/playlists/import-status/:jobId', adminAuth, (req, res) => {
+  const job = importJobs[req.params.jobId]
+  if (!job) return res.status(404).json({ error: 'Importación no encontrada' })
+  res.json({
+    total: job.total,
+    checked: job.checked,
+    done: job.done,
+    error: job.error,
+    playlistId: job.playlistId,
+    skipped: job.result ? job.result.blocked.length : 0,
+    blockedSongs: (job.done && job.result) ? job.result.blocked : []
+  })
 })
 
 app.delete('/admin/playlists/:id', adminAuth, async (req, res) => {
@@ -420,16 +476,27 @@ app.delete('/admin/playlists/:id', adminAuth, async (req, res) => {
 })
 
 app.post('/admin/playlists/:id/reload', adminAuth, async (req, res) => {
-  try {
-    const playlists = await getPlaylists()
-    const playlist = playlists.find(p => p.id === req.params.id)
-    if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
-    const { embeddable, blocked } = await fetchYoutubePlaylist(playlist.youtubeId)
-    playlist.total = embeddable.length
-    await savePlaylists(playlists)
-    await savePlaylistSongs(playlist.id, embeddable)
-    res.json({ ok: true, total: embeddable.length, skipped: blocked.length, blockedSongs: blocked })
-  } catch (error) { res.status(500).json({ error: error.message }) }
+  const playlists = await getPlaylists()
+  const playlist = playlists.find(p => p.id === req.params.id)
+  if (!playlist) return res.status(404).json({ error: 'Playlist no encontrada' })
+
+  const jobId = createImportJob()
+  res.json({ ok: true, jobId })
+
+  runImportJob(jobId, playlist.youtubeId).then(async () => {
+    const job = importJobs[jobId]
+    if (job.error) return
+    const { embeddable, blocked } = job.result
+    try {
+      const currentPlaylists = await getPlaylists()
+      const pl = currentPlaylists.find(p => p.id === req.params.id)
+      if (!pl) { job.error = 'Playlist no encontrada'; return }
+      pl.total = embeddable.length
+      await savePlaylists(currentPlaylists)
+      await savePlaylistSongs(pl.id, embeddable)
+      job.playlistId = pl.id
+    } catch (e) { job.error = e.message }
+  })
 })
 
 app.post('/admin/playlists/:id/toggle', adminAuth, async (req, res) => {
