@@ -372,6 +372,40 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000)
 
+// ─── ADMIN: DIAGNÓSTICO — ESTADO CRUDO DE UN VIDEO (TEMPORAL, PARA DEBUG) ────
+
+app.get('/admin/debug-video', adminAuth, async (req, res) => {
+  const { videoId } = req.query
+  if (!videoId) return res.status(400).json({ error: 'Falta el videoId' })
+  try {
+    const response = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'status,contentDetails,snippet', id: videoId, key: process.env.YOUTUBE_API_KEY }
+    })
+    const item = response.data.items?.[0]
+    if (!item) {
+      return res.json({
+        videoId,
+        encontrado: false,
+        nota: 'La API no devolvió este video: puede estar eliminado, privado, o el ID es incorrecto'
+      })
+    }
+    res.json({
+      videoId,
+      encontrado: true,
+      titulo: item.snippet?.title,
+      canal: item.snippet?.channelTitle,
+      privacyStatus: item.status?.privacyStatus,
+      embeddable: item.status?.embeddable,
+      uploadStatus: item.status?.uploadStatus,
+      regionRestriction: item.contentDetails?.regionRestriction || null,
+      raw_status: item.status,
+      raw_contentDetails: item.contentDetails
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message, detalle: e.response?.data || null })
+  }
+})
+
 // ─── ADMIN: INFO DE VIDEO POR ID ─────────────────────────────────────────────
 
 app.get('/admin/song-info', adminAuth, async (req, res) => {
