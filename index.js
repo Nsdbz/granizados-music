@@ -107,6 +107,28 @@ async function logBlockedVideo(videoId, title, thumbnail) {
   } catch (e) {}
 }
 
+// Elimina un video de TODAS las playlists donde aparezca. Se usa cuando la
+// pantalla detecta en vivo que un video realmente falla al reproducirse
+// (bloqueo de Content ID / licencia), algo que la Data API no puede predecir
+// de antemano porque no existe en su metadata.
+async function removeSongFromAllPlaylists(videoId) {
+  try {
+    const playlists = await getPlaylists()
+    let changed = false
+    for (const playlist of playlists) {
+      const songs = await getPlaylistSongs(playlist.id)
+      const filtered = songs.filter(s => s.videoId !== videoId)
+      if (filtered.length !== songs.length) {
+        await savePlaylistSongs(playlist.id, filtered)
+        playlist.total = filtered.length
+        changed = true
+      }
+    }
+    if (changed) await savePlaylists(playlists)
+    return changed
+  } catch (e) { return false }
+}
+
 // ─── CONFIG (límite entre peticiones) ────────────────────────────────────────
 
 async function getConfig() {
@@ -233,12 +255,21 @@ app.get('/search', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Error buscando en YouTube' }) }
 })
 
-// ─── HELPER: VERIFICAR EMBEDDING EN LOTES ────────────────────────────────────
-// oEmbed (usado antes) ya no refleja de forma confiable si el embedding está
-// bloqueado — YouTube devuelve 200 casi siempre sin importar la restricción.
-// Ahora usamos videos.list (part=status,contentDetails), que sí trae el dato
-// real y además permite consultar hasta 50 IDs en una sola llamada (1 unidad
-// de cuota por llamada, sin importar cuántos IDs se incluyan).
+// ─── HELPERS: VERIFICACIÓN DE EMBEDDING (EN DOS PASOS) ───────────────────────
+// Hay DOS tipos distintos de "bloqueado" en YouTube, y ningún endpoint único
+// los detecta ambos:
+//
+//  1. Restricción DECLARADA por el dueño del video (embedding desactivado,
+//     privado, o restricción regional explícita). Esto SÍ aparece en
+//     videos.list (part=status,contentDetails) — rápido, y hasta 50 IDs
+//     por llamada (1 unidad de cuota sin importar cuántos IDs).
+//
+//  2. Bloqueo dinámico de Content ID / licencia musical (típico en videos
+//     oficiales de sellos discográficos). Este NO aparece en ningún campo
+//     de la Data API — hay que probar a "generar el embed" de verdad, que
+//     es justo lo que hace el endpoint oEmbed. Es más lento (una petición
+//     por video, sin poder agrupar) así que solo lo usamos sobre los
+//     videos que ya pasaron el paso 1, para no gastar tiempo de más.
 
 function chunkArray(arr, size) {
   const out = []
@@ -246,9 +277,12 @@ function chunkArray(arr, size) {
   return out
 }
 
-// Recibe hasta 50 videoIds y devuelve un Map<videoId, boolean>
-// true = se puede reproducir/incrustar, false = bloqueado/privado/eliminado
-async function checkEmbeddableChunk(videoIds) {
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+// PASO 1 — hasta 50 IDs por llamada. Devuelve Map<videoId, boolean>
+async function checkMetadataChunk(videoIds) {
   const result = new Map()
 
   try {
@@ -280,13 +314,85 @@ async function checkEmbeddableChunk(videoIds) {
       if (!found.has(id)) result.set(id, false)
     }
   } catch (e) {
-    console.log('Error verificando lote de videos:', e.code || e.message)
+    console.log('Error verificando metadata en lote:', e.code || e.message)
     // Si falla la llamada (red/timeout), conservamos esas canciones para no
     // eliminar nada por un problema temporal de conexión.
     for (const id of videoIds) result.set(id, true)
   }
 
   return result
+}
+
+// PASO 2 — un video a la vez, con reintentos ante códigos no concluyentes
+// (ej. 429 por límite de tasa). Solo devolvemos false ante 401/403/404,
+// que son las respuestas reales de "no se puede incrustar".
+const OEMBED_MAX_ATTEMPTS = 3
+
+async function checkOembedEmbeddable(videoId, attempt = 1) {
+  try {
+    const res = await axios.get('https://www.youtube.com/oembed', {
+      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' },
+      timeout: 8000,
+      validateStatus: () => true // queremos leer el código real, no que axios lance excepción
+    })
+
+    if (res.status === 200) return true
+    if ([401, 403, 404].includes(res.status)) return false
+
+    // Código raro (ej. 429 rate limit) — reintentar antes de asumir nada
+    if (attempt < OEMBED_MAX_ATTEMPTS) {
+      await sleep(500 * attempt)
+      return checkOembedEmbeddable(videoId, attempt + 1)
+    }
+    console.log(`oEmbed: código ${res.status} no concluyente para ${videoId} tras ${attempt} intentos, se conserva`)
+    return true
+  } catch (e) {
+    if (attempt < OEMBED_MAX_ATTEMPTS) {
+      await sleep(500 * attempt)
+      return checkOembedEmbeddable(videoId, attempt + 1)
+    }
+    console.log(`oEmbed: error de red para ${videoId} tras ${attempt} intentos:`, e.code || e.message)
+    return true
+  }
+}
+
+const OEMBED_PAUSE_MS = 250 // margen prudente entre llamadas individuales a oEmbed
+
+// Verifica una lista completa de canciones combinando ambos pasos.
+// `job`, si se pasa, se usa para reportar progreso (job.checked).
+async function verifySongs(songs, job) {
+  const embeddable = []
+  const blocked = []
+  const survivedMetadata = []
+
+  // Paso 1: filtro rápido en lotes de 50
+  const chunks = chunkArray(songs, 50)
+  for (const chunk of chunks) {
+    const metaMap = await checkMetadataChunk(chunk.map(s => s.videoId))
+    for (const song of chunk) {
+      if (metaMap.get(song.videoId)) {
+        survivedMetadata.push(song)
+      } else {
+        blocked.push(song)
+        if (job) job.checked++
+      }
+    }
+    await sleep(100)
+  }
+
+  // Paso 2: verificación individual solo sobre los que sobrevivieron el paso 1
+  for (const song of survivedMetadata) {
+    const ok = await checkOembedEmbeddable(song.videoId)
+    if (ok) {
+      embeddable.push(song)
+    } else {
+      blocked.push(song)
+    }
+    if (job) job.checked++
+    await sleep(OEMBED_PAUSE_MS)
+  }
+
+  return { embeddable, blocked }
 }
 
 // ─── IMPORTAR PLAYLIST DE YOUTUBE (SIN VERIFICAR AÚN) ────────────────────────
@@ -319,7 +425,6 @@ async function fetchYoutubePlaylistRaw(playlistId) {
 // al terminar, así que nunca queda una playlist a medias guardada.
 
 const importJobs = {}
-const PAUSE_BETWEEN_CHUNKS_MS = 100 // margen de seguridad entre lotes, no por canción
 
 function createImportJob() {
   const jobId = `imp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -333,24 +438,10 @@ async function runImportJob(jobId, youtubeId) {
     const songs = await fetchYoutubePlaylistRaw(youtubeId)
     job.total = songs.length
 
-    const embeddable = []
-    const blocked = []
-    const chunks = chunkArray(songs, 50)
+    const { embeddable, blocked } = await verifySongs(songs, job)
 
-    for (const chunk of chunks) {
-      const statusMap = await checkEmbeddableChunk(chunk.map(s => s.videoId))
-
-      for (const song of chunk) {
-        if (statusMap.get(song.videoId)) {
-          embeddable.push(song)
-        } else {
-          blocked.push(song)
-          await logBlockedVideo(song.videoId, song.title, song.thumbnail)
-        }
-      }
-
-      job.checked += chunk.length
-      await new Promise(r => setTimeout(r, PAUSE_BETWEEN_CHUNKS_MS))
+    for (const song of blocked) {
+      await logBlockedVideo(song.videoId, song.title, song.thumbnail)
     }
 
     console.log(`Playlist ${youtubeId}: ${songs.length} totales, ${embeddable.length} embeddables, ${blocked.length} bloqueados`)
@@ -382,10 +473,13 @@ app.get('/admin/debug-video', adminAuth, async (req, res) => {
       params: { part: 'status,contentDetails,snippet', id: videoId, key: process.env.YOUTUBE_API_KEY }
     })
     const item = response.data.items?.[0]
+    const oembedOk = await checkOembedEmbeddable(videoId)
+
     if (!item) {
       return res.json({
         videoId,
         encontrado: false,
+        oembed_embeddable: oembedOk,
         nota: 'La API no devolvió este video: puede estar eliminado, privado, o el ID es incorrecto'
       })
     }
@@ -395,7 +489,9 @@ app.get('/admin/debug-video', adminAuth, async (req, res) => {
       titulo: item.snippet?.title,
       canal: item.snippet?.channelTitle,
       privacyStatus: item.status?.privacyStatus,
-      embeddable: item.status?.embeddable,
+      embeddable_segun_data_api: item.status?.embeddable,
+      oembed_embeddable: oembedOk,
+      veredicto_final: (item.status?.embeddable !== false && oembedOk) ? 'REPRODUCIBLE' : 'BLOQUEADO',
       uploadStatus: item.status?.uploadStatus,
       regionRestriction: item.contentDetails?.regionRestriction || null,
       raw_status: item.status,
@@ -668,24 +764,12 @@ app.post('/admin/playlists/:id/fix', adminAuth, async (req, res) => {
 
     console.log(`Reparando playlist "${playlist.name}" — ${songs.length} canciones`)
 
-    let removed = 0
-    const repairedSongs = []
-    const chunks = chunkArray(songs, 50)
+    const { embeddable: repairedSongs, blocked } = await verifySongs(songs)
+    const removed = blocked.length
 
-    for (const chunk of chunks) {
-      const statusMap = await checkEmbeddableChunk(chunk.map(s => s.videoId))
-
-      for (const song of chunk) {
-        if (statusMap.get(song.videoId)) {
-          repairedSongs.push(song)
-        } else {
-          console.log(`Bloqueado: "${song.title}" (${song.videoId})`)
-          await logBlockedVideo(song.videoId, song.title, song.thumbnail)
-          removed++
-        }
-      }
-
-      await new Promise(r => setTimeout(r, PAUSE_BETWEEN_CHUNKS_MS))
+    for (const song of blocked) {
+      console.log(`Bloqueado: "${song.title}" (${song.videoId})`)
+      await logBlockedVideo(song.videoId, song.title, song.thumbnail)
     }
 
     playlist.total = repairedSongs.length
@@ -899,10 +983,24 @@ app.delete('/screen/played/:id', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }) }
 })
 
+// Códigos del iframe player de YouTube que significan "este video no se puede
+// reproducir aquí, y no va a cambiar" (bloqueo real, no un glitch pasajero):
+// 100 = video eliminado/privado, 101 y 150 = el dueño no permite embedding
+// (incluye bloqueos de Content ID que la Data API no reporta de antemano).
+const REAL_BLOCK_ERROR_CODES = [100, 101, 150]
+
 app.post('/screen/report-error', async (req, res) => {
   try {
     const { videoId, title, thumbnail, errorCode } = req.body
-    if (videoId && title) await logBlockedVideo(videoId, title, thumbnail, errorCode)
+    if (!videoId || !title) return res.json({ ok: false })
+
+    await logBlockedVideo(videoId, title, thumbnail, errorCode)
+
+    if (REAL_BLOCK_ERROR_CODES.includes(Number(errorCode))) {
+      const removed = await removeSongFromAllPlaylists(videoId)
+      console.log(`Video bloqueado en reproducción real: "${title}" (code ${errorCode})${removed ? ' — eliminado de sus playlists' : ''}`)
+    }
+
     res.json({ ok: true })
   } catch (e) { res.json({ ok: false }) }
 })
