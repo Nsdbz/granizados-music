@@ -699,87 +699,16 @@ async function addPlaylist() {
     const data = await res.json()
     if (!data.ok) { showToast(data.error, true); return }
 
-    // A partir de aquí, el servidor verifica cada canción una por una en
-    // segundo plano. Consultamos el progreso cada 1.5s hasta que termine.
-    const result = await pollImportProgress(data.jobId, progressText, progressFill)
-
-    if (result.error) { showToast(result.error, true); return }
-
     document.getElementById('playlistUrl').value  = ''
     document.getElementById('playlistName').value = ''
     clearNewCover()
     loadPlaylists()
-
-    const total = result.total - result.skipped
-    if (result.skipped > 0) {
-      showBlockedImportAlert(name, total, result.skipped, result.blockedSongs || [])
-    } else {
-      showToast(`✅ "${name}" — ${total} canciones`)
-    }
+    showToast(`✅ "${name}" — ${data.total} canciones`)
   } catch (e) { showToast('Error de conexión', true) }
   finally {
     progressWrap.style.display = 'none'
     btn.disabled = false
   }
-}
-
-// Pregunta el progreso de una importación cada 1.5s hasta que el job termine.
-function pollImportProgress(jobId, progressText, progressFill) {
-  return new Promise(resolve => {
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch(`/admin/playlists/import-status/${jobId}`)
-        const job = await res.json()
-
-        if (job.total > 0) {
-          const pct = Math.round((job.checked / job.total) * 100)
-          progressText.textContent = `Verificando canciones... ${job.checked}/${job.total}`
-          progressFill.style.width = `${pct}%`
-        }
-
-        if (job.done) {
-          clearInterval(timer)
-          resolve(job)
-        }
-      } catch (e) {
-        clearInterval(timer)
-        resolve({ error: 'Se perdió la conexión durante la importación' })
-      }
-    }, 1500)
-  })
-}
-
-// ─── ALERTA DE VIDEOS BLOQUEADOS AL IMPORTAR ─────────────────────────────────
-
-function showBlockedImportAlert(playlistName, total, skipped, blockedSongs) {
-  document.getElementById('blockedImportTitle').textContent = `"${playlistName}" importada`
-  document.getElementById('blockedImportSub').innerHTML =
-    `<span class="badge badge-green">${total} canciones agregadas</span> &nbsp; <span class="badge badge-red">${skipped} bloqueadas por YouTube</span>`
-
-  const list = document.getElementById('blockedImportList')
-  if (blockedSongs.length) {
-    list.innerHTML = blockedSongs.map(s => `
-      <div class="songs-modal-item">
-        ${s.thumbnail
-          ? `<img src="${s.thumbnail}" alt="" class="smi-thumb">`
-          : '<div class="smi-thumb smi-thumb-ph">🚫</div>'
-        }
-        <div class="smi-info">
-          <div class="smi-title">${s.title}</div>
-          <div class="smi-id">${s.videoId}</div>
-        </div>
-        <a class="btn-sm btn-ghost" href="https://www.youtube.com/watch?v=${s.videoId}" target="_blank" title="Ver en YouTube">▶</a>
-      </div>
-    `).join('')
-  } else {
-    list.innerHTML = `<p class="empty-msg">Sin detalle disponible</p>`
-  }
-
-  document.getElementById('blockedImportModal').classList.add('open')
-}
-
-function closeBlockedImportModal() {
-  document.getElementById('blockedImportModal').classList.remove('open')
 }
 
 // ─── REPORTE DIARIO ───────────────────────────────────────────────────────────
@@ -1041,7 +970,6 @@ async function saveCover() {
 document.addEventListener('click', e => {
   if (e.target === document.getElementById('coverModal')) closeCoverModal()
   if (e.target === document.getElementById('songsModal')) closeSongsModal()
-  if (e.target === document.getElementById('blockedImportModal')) closeBlockedImportModal()
 })
 
 // ─── MODAL: VER Y ELIMINAR CANCIONES DE PLAYLIST ─────────────────────────────
