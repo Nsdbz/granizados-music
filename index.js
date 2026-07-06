@@ -101,10 +101,32 @@ async function saveBlockedLog(log) {
 async function logBlockedVideo(videoId, title, thumbnail) {
   try {
     const log = await getBlockedLog()
-    if (log.find(v => v.videoId === videoId)) return
-    log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
-    await saveBlockedLog(log.slice(0, 100))
+    if (!log.find(v => v.videoId === videoId)) {
+      log.unshift({ videoId, title, thumbnail: thumbnail || null, blockedAt: Date.now() })
+      await saveBlockedLog(log.slice(0, 100))
+    }
   } catch (e) {}
+}
+
+// Saca un video de todas las playlists donde aparezca (se usa cuando la
+// pantalla reporta en vivo que un video ya no se puede reproducir).
+async function removeVideoFromAllPlaylists(videoId) {
+  try {
+    const playlists = await getPlaylists()
+    let changed = false
+    for (const pl of playlists) {
+      const songs = await getPlaylistSongs(pl.id)
+      const filtered = songs.filter(s => s.videoId !== videoId)
+      if (filtered.length !== songs.length) {
+        pl.total = filtered.length
+        await savePlaylistSongs(pl.id, filtered)
+        changed = true
+      }
+    }
+    if (changed) await savePlaylists(playlists)
+  } catch (e) {
+    console.log('Error removiendo video bloqueado de playlists:', e.message)
+  }
 }
 
 // ─── CONFIG (límite entre peticiones) ────────────────────────────────────────
@@ -834,7 +856,10 @@ app.delete('/screen/played/:id', async (req, res) => {
 app.post('/screen/report-error', async (req, res) => {
   try {
     const { videoId, title, thumbnail, errorCode } = req.body
-    if (videoId && title) await logBlockedVideo(videoId, title, thumbnail, errorCode)
+    if (videoId && title) {
+      await logBlockedVideo(videoId, title, thumbnail, errorCode)
+      await removeVideoFromAllPlaylists(videoId)
+    }
     res.json({ ok: true })
   } catch (e) { res.json({ ok: false }) }
 })
