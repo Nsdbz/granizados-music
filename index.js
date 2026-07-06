@@ -312,11 +312,27 @@ async function runImportJob(jobId, youtubeId) {
     console.log(`Playlist ${youtubeId}: ${songs.length} totales, ${embeddable.length} embeddables, ${blocked.length} bloqueados`)
     job.result = { embeddable, blocked }
   } catch (e) {
-    console.log('Error en importación en segundo plano:', e.message)
-    job.error = e.message || 'No se pudo importar la playlist'
+    console.log('Error en importación en segundo plano:', e.response?.status, e.response?.data?.error?.message || e.message)
+    job.error = translateYoutubeError(e)
   } finally {
     job.done = true
   }
+}
+
+// Convierte errores de axios/YouTube en mensajes entendibles para el admin
+function translateYoutubeError(e) {
+  const status = e.response?.status
+  const reason = e.response?.data?.error?.errors?.[0]?.reason
+  if (status === 404 || reason === 'playlistNotFound') {
+    return 'No se encontró esa playlist. Verifica que el link sea correcto y que la playlist sea pública.'
+  }
+  if (status === 403 && reason === 'quotaExceeded') {
+    return 'Se agotó la cuota diaria de la API de YouTube. Intenta de nuevo más tarde.'
+  }
+  if (status === 403) {
+    return 'La playlist es privada o no se puede acceder a ella.'
+  }
+  return e.message || 'No se pudo importar la playlist.'
 }
 
 // Limpia jobs viejos ya terminados para no acumular memoria indefinidamente
