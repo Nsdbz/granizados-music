@@ -231,6 +231,19 @@
           </select>
           <button class="btn-sm btn-save" onclick="saveBgPlaylist()">Guardar</button>
         </div>
+
+        <div class="divider"></div>
+
+        <!-- Video promocional -->
+        <div class="form-label" style="margin-bottom:8px">Video promocional</div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <div class="setting-label-title">Cada cuántas canciones</div>
+            <div class="setting-label-sub" id="promoEveryStatus">Cargando...</div>
+          </div>
+          <input type="number" class="number-input" id="promoEveryInput" min="1" max="50" value="5"/>
+          <button class="btn-sm btn-save" onclick="savePromoEvery()">Guardar</button>
+        </div>
       </div>
 
       <!-- Agregar canción manualmente -->

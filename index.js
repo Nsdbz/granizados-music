@@ -25,7 +25,9 @@ const cache = {
   playlistSongs: {},         // { [playlistId]: songs[] }
   queue: null,
   backgroundPlaylistId: undefined,  // undefined = aún no cargado, null = cargado y sin valor
-  blockedLog: null           // null = aún no cargado desde Redis
+  blockedLog: null,          // null = aún no cargado desde Redis
+  promoCounter: null,        // null = aún no cargado desde Redis
+  promoEveryN: null          // null = aún no cargado desde Redis
 }
 
 // ─── HELPERS DE REDIS ─────────────────────────────────────────────────────────
@@ -201,6 +203,35 @@ async function saveBackgroundPlaylistId(id) {
     if (id) await redis.set('background_playlist_id', id)
     else await redis.del('background_playlist_id')
   } catch (e) {}
+}
+
+// ─── VIDEO PROMOCIONAL (se repite cada N canciones reproducidas) ─────────────
+// El video en sí es fijo (viene de .env); el "cada cuántas canciones" se
+// puede cambiar desde el panel admin y vive en Redis.
+
+const PROMO_VIDEO_ID = process.env.PROMO_VIDEO_ID || null
+const PROMO_VIDEO_TITLE = process.env.PROMO_VIDEO_TITLE || 'Promoción'
+
+async function getPromoCounter() {
+  if (cache.promoCounter !== null) return cache.promoCounter
+  try { const saved = await redis.get('promo_counter'); cache.promoCounter = saved || 0; return cache.promoCounter }
+  catch (e) { return 0 }
+}
+
+async function savePromoCounter(n) {
+  cache.promoCounter = n
+  try { await redis.set('promo_counter', n) } catch (e) {}
+}
+
+async function getPromoEveryN() {
+  if (cache.promoEveryN !== null) return cache.promoEveryN
+  try { const saved = await redis.get('promo_every_n'); cache.promoEveryN = saved || 5; return cache.promoEveryN }
+  catch (e) { return 5 }
+}
+
+async function savePromoEveryN(n) {
+  cache.promoEveryN = n
+  try { await redis.set('promo_every_n', n) } catch (e) {}
 }
 
 async function getRandomSongFromPlaylists() {
@@ -606,6 +637,21 @@ app.post('/admin/background-playlist', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── ADMIN: VIDEO PROMOCIONAL ────────────────────────────────────────────────
+
+app.get('/admin/promo-every', adminAuth, async (req, res) => {
+  try { res.json({ every: await getPromoEveryN(), configured: !!PROMO_VIDEO_ID }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/admin/promo-every', adminAuth, async (req, res) => {
+  try {
+    const every = Math.max(1, Number(req.body.every) || 5)
+    await savePromoEveryN(every)
+    res.json({ ok: true, every })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── CLIENTE: VER PLAYLISTS Y CANCIONES ───────────────────────────────────────
 
 app.get('/playlists', async (req, res) => {
@@ -674,6 +720,19 @@ app.post('/request', async (req, res) => {
 
 app.get('/screen/next', async (req, res) => {
   try {
+    if (PROMO_VIDEO_ID) {
+      const [counter, everyN] = await Promise.all([getPromoCounter(), getPromoEveryN()])
+      if (everyN > 0 && counter >= everyN) {
+        await savePromoCounter(0)
+        return res.json({
+          id: `promo_${Date.now()}`,
+          videoId: PROMO_VIDEO_ID,
+          title: PROMO_VIDEO_TITLE,
+          thumbnail: null,
+          promo: true
+        })
+      }
+    }
     const queue = await getQueue()
     if (queue.length) return res.json(queue[0])
     const randomSong = await getRandomSongFromPlaylists()
@@ -684,8 +743,13 @@ app.get('/screen/next', async (req, res) => {
 
 app.delete('/screen/played/:id', async (req, res) => {
   try {
+    const id = req.params.id
+    if (!id.startsWith('promo_')) {
+      const counter = await getPromoCounter()
+      await savePromoCounter(counter + 1)
+    }
     const queue = await getQueue()
-    await saveQueue(queue.filter(v => v.id !== req.params.id))
+    await saveQueue(queue.filter(v => v.id !== id))
     res.json({ ok: true })
   } catch (error) { res.status(500).json({ error: error.message }) }
 })

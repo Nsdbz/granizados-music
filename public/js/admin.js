@@ -24,6 +24,7 @@ function init() {
   loadLimit()
   loadReports()
   loadBgPlaylist()
+  loadPromoEvery()
   loadBlocked()
   setInterval(loadQueue,   10000)
   setInterval(loadBlocked, 15000)
@@ -457,6 +458,43 @@ document.addEventListener('click', e => {
   if (e.target === document.getElementById('addToPlaylistModal')) closeAddModal()
   if (e.target === document.getElementById('mergeModal'))         closeMergeModal()
 })
+
+// ─── VIDEO PROMOCIONAL ────────────────────────────────────────────────────────
+
+async function loadPromoEvery() {
+  try {
+    const res = await fetch('/admin/promo-every')
+    const { every, configured } = await res.json()
+    document.getElementById('promoEveryInput').value = every
+    document.getElementById('promoEveryStatus').textContent = configured
+      ? `Cada ${every} canción${every !== 1 ? 'es' : ''}`
+      : 'Sin video promocional configurado (.env)'
+  } catch (e) {
+    document.getElementById('promoEveryStatus').textContent = 'Error cargando'
+  }
+}
+
+async function savePromoEvery() {
+  const every = document.getElementById('promoEveryInput').value
+  const btn = document.querySelector('[onclick="savePromoEvery()"]')
+  if (btn) { btn.disabled = true; btn.textContent = '...' }
+  try {
+    const res  = await fetch('/admin/promo-every', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ every })
+    })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`✅ Promo cada ${data.every} canciones`)
+      document.getElementById('promoEveryStatus').textContent = `Cada ${data.every} canción${data.every !== 1 ? 'es' : ''}`
+    } else showToast(data.error, true)
+  } catch (e) {
+    showToast('Error de conexión', true)
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar' }
+  }
+}
 
 // ─── PLAYLIST DE FONDO ────────────────────────────────────────────────────────
 
