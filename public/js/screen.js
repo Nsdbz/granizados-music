@@ -29,7 +29,8 @@ function onYouTubeIframeAPIReady() {
       playsinline: 1,
       iv_load_policy: 3,
       modestbranding: 1,
-      fs: 0
+      fs: 0,
+      cc_load_policy: 0
     },
     events: {
       onReady: () => checkQueue(),
