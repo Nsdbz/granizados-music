@@ -33,11 +33,17 @@ function onYouTubeIframeAPIReady() {
       cc_load_policy: 0
     },
     events: {
-      onReady: () => checkQueue(),
+      onReady: () => { disableCaptions(); checkQueue() },
       onStateChange: onPlayerStateChange,
       onError: (e) => handleVideoError(e)
     }
   })
+}
+
+function disableCaptions() {
+  if (!player || !player.unloadModule) return
+  try { player.unloadModule('captions') } catch (e) {}
+  try { player.unloadModule('cc') } catch (e) {}
 }
 
 function onPlayerStateChange(event) {
@@ -47,6 +53,7 @@ function onPlayerStateChange(event) {
   if (event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.PLAYING) {
     isPlaying = true
     hideWaitingScreen()
+    disableCaptions()
   }
 }
 
