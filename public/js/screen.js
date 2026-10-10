@@ -50,6 +50,10 @@ function onPlayerStateChange(event) {
   if (event.data === YT.PlayerState.ENDED) {
     videoEnded()
   }
+  // Si el video se pausa por cualquier motivo, se reanuda solo (evita el ícono de pausa)
+  if (event.data === YT.PlayerState.PAUSED && currentVideo) {
+    player.playVideo()
+  }
   if (event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.PLAYING) {
     isPlaying = true
     hideWaitingScreen()

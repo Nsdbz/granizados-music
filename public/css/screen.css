@@ -73,6 +73,12 @@ html, body {
   height: 100% !important;
   border: none;
 }
+
+/* Sin interacción con el video: no se puede pausar tocando la pantalla */
+#ytPlayer,
+#ytPlayer iframe {
+  pointer-events: none;
+}
  
 /* ─── PANTALLA DE ESPERA ─────────────────────────────────────────────────────── */
  
